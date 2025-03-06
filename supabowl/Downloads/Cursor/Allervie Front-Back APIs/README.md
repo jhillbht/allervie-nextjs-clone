@@ -72,7 +72,21 @@ The application follows a client-server architecture:
 
 ## Running the Application
 
-You can run both the backend and frontend with a single command using the provided test script:
+You can run both the backend and frontend with a single command using the provided scripts:
+
+### Running with Real Google Ads Data (Recommended)
+
+```bash
+./run_with_real_ads.sh
+```
+
+This script will:
+1. Set the configuration to use real Google Ads data
+2. Test the Google Ads API connection
+3. Start the Flask backend server with real data (with automatic fallback to mock data if needed)
+4. Open the API test page in your browser
+
+### Running with Mock Data (For Development)
 
 ```bash
 ./run_test.py
@@ -84,18 +98,20 @@ This script will:
 3. Start the React frontend development server
 4. Open a browser to view the dashboard
 
-Alternatively, you can run the components separately:
+### Running Components Separately
 
-### Backend
+You can also run the components separately:
+
+#### Backend
 
 ```bash
 cd backend
 python app.py
 ```
 
-The backend will run on http://localhost:5001
+The backend will run on http://localhost:5002
 
-### Frontend
+#### Frontend
 
 ```bash
 cd frontend
@@ -150,6 +166,7 @@ For detailed instructions on setting up and troubleshooting the Google Ads integ
 
 - [Google Ads Setup Guide](GOOGLE_ADS_SETUP.md): Step-by-step instructions for setting up Google Ads API integration
 - [Google Ads Troubleshooting Guide](GOOGLE_ADS_TROUBLESHOOTING.md): Solutions for common integration issues
+- [Manager Account (MCC) Setup Guide](MCC_SETUP.md): Special instructions for using Google Ads Manager accounts
 
 ## Troubleshooting
 
