@@ -116,42 +116,51 @@ def get_ads_performance_with_fallback(start_date=None, end_date=None, previous_p
         dict: Performance data, either real or mock.
     """
     try:
-        # Try to import the real Google Ads client
+        # Try to import the real Google Ads client - always attempt this first
         from google_ads_client import get_ads_performance
         
         # Try to get real data first
         logger.info("Attempting to get real Google Ads performance data")
-        real_data = get_ads_performance(start_date, end_date, previous_period)
         
-        if real_data:
-            # Validate the data structure
-            required_metrics = [
-                "impressions", "clicks", "conversions", "cost",
-                "conversionRate", "clickThroughRate", "costPerConversion"
-            ]
+        try:
+            real_data = get_ads_performance(start_date, end_date, previous_period)
             
-            # Check if all required metrics are present and have the correct structure
-            is_valid = all(
-                metric in real_data and
-                isinstance(real_data[metric], dict) and
-                "value" in real_data[metric] and
-                "change" in real_data[metric]
-                for metric in required_metrics
-            )
-            
-            if is_valid:
-                logger.info("Successfully retrieved and validated real Google Ads performance data")
-                return real_data
+            if real_data:
+                # Validate the data structure
+                required_metrics = [
+                    "impressions", "clicks", "conversions", "cost",
+                    "conversionRate", "clickThroughRate", "costPerConversion"
+                ]
+                
+                # Check if all required metrics are present and have the correct structure
+                is_valid = all(
+                    metric in real_data and
+                    isinstance(real_data[metric], dict) and
+                    "value" in real_data[metric] and
+                    "change" in real_data[metric]
+                    for metric in required_metrics
+                )
+                
+                if is_valid:
+                    logger.info("Successfully retrieved and validated real Google Ads performance data")
+                    return real_data
+                else:
+                    logger.error("Real data is missing required metrics or has invalid structure")
+                    logger.info("Falling back to mock Google Ads performance data")
             else:
-                logger.error("Real data is missing required metrics or has invalid structure")
-                raise ValueError("Invalid data structure from Google Ads API")
+                logger.info("No real Google Ads data available, falling back to mock data")
+                
+        except Exception as client_error:
+            logger.error(f"Error getting real Google Ads performance data: {client_error}")
+            logger.info("Falling back to mock Google Ads performance data due to error")
                 
     except ImportError as e:
         logger.error(f"Failed to import Google Ads client: {e}")
     except Exception as e:
-        logger.error(f"Error getting real Google Ads performance data: {e}")
+        logger.error(f"Error in Google Ads client handling: {e}")
+        import traceback
         logger.error(traceback.format_exc())
     
     # If we get here, either the import failed or getting real data failed
-    logger.info("Falling back to mock Google Ads performance data")
+    logger.info("Using mock Google Ads performance data")
     return get_mock_ads_performance(start_date, end_date, previous_period)
