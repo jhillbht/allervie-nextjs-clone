@@ -24,7 +24,7 @@ from extended_routes import extended_bp, AVAILABLE_ENDPOINTS  # Import our exten
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Import config
-from config import USE_REAL_ADS_CLIENT
+from config import USE_REAL_ADS_CLIENT, ALLOW_MOCK_DATA, ALLOW_MOCK_AUTH, ENVIRONMENT
 
 # Set up logging
 logging.basicConfig(
@@ -151,6 +151,11 @@ def callback():
     """Handle the OAuth 2.0 callback."""
     # Check if this is a mock auth callback
     if 'mock' in request.args:
+        # Check if mock auth is allowed
+        if not ALLOW_MOCK_AUTH:
+            logger.warning("Mock authentication is disabled in production mode")
+            return redirect(f"{FRONTEND_URL}/login?error=mock_auth_disabled")
+            
         logger.info("Processing mock authentication callback")
         # Create a mock token
         token = {
@@ -367,12 +372,16 @@ def ads_performance():
         from google_ads_fallback import get_ads_performance_with_fallback
         
         # Get the performance data
-        logger.info("Using Google Ads client with fallback to mock data")
+        logger.info("Using Google Ads client with fallback to mock data if allowed")
         performance_data = get_ads_performance_with_fallback(start_date, end_date, previous_period)
         
         if not performance_data:
-            logger.error("No performance data returned from Google Ads API")
-            raise Exception("No data returned from Google Ads API")
+            logger.error("No performance data returned from Google Ads API and mock data is disabled")
+            return jsonify({
+                "error": "No data available",
+                "message": "Failed to retrieve Google Ads performance data and mock data is disabled in production mode",
+                "environment": ENVIRONMENT
+            }), 404
         
         logger.info(f"Successfully retrieved Google Ads performance data")
         
@@ -575,6 +584,14 @@ def list_endpoints():
 @app.route('/api/auth/mock-token', methods=['GET'])
 def mock_token():
     """Generate a mock token for testing"""
+    # Check if mock auth is allowed
+    if not ALLOW_MOCK_AUTH:
+        logger.warning("Mock authentication is disabled in production mode")
+        return jsonify({
+            "error": "Mock authentication is disabled in production mode",
+            "message": "Please use real Google OAuth authentication"
+        }), 403
+        
     logger.info("Generating mock token for testing")
     
     # Create a mock token

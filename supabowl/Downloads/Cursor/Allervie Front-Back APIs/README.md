@@ -72,9 +72,44 @@ The application follows a client-server architecture:
 
 ## Running the Application
 
-You can run both the backend and frontend with a single command using the provided scripts:
+You can run the application in different environments using the provided scripts:
 
-### Running with Real Google Ads Data (Recommended)
+### Production Mode (No Mock Data)
+
+```bash
+./run_production.sh
+```
+
+This script will:
+1. Set production configuration (no mock data or authentication)
+2. Test the Google Ads API connection
+3. Start the Flask backend server with real data only
+4. Open the API endpoints page in your browser
+
+In production mode:
+- Only real Google Ads data will be used
+- No mock data will be returned if real data is unavailable
+- All API errors will be returned as-is for debugging
+- Mock authentication is disabled - only real OAuth flows are allowed
+
+### Development Mode (With Fallbacks)
+
+```bash
+./run_development.sh
+```
+
+This script will:
+1. Set development configuration (allow mock data and authentication)
+2. Test the Google Ads API connection
+3. Start the Flask backend server with real data priority but mock fallbacks
+4. Open the API test page in your browser
+
+In development mode:
+- The system will try to use real Google Ads data first
+- Mock data will be used as a fallback if real data isn't available
+- Mock authentication is allowed for testing
+
+### Legacy Mode (With Real Ads)
 
 ```bash
 ./run_with_real_ads.sh
@@ -83,20 +118,8 @@ You can run both the backend and frontend with a single command using the provid
 This script will:
 1. Set the configuration to use real Google Ads data
 2. Test the Google Ads API connection
-3. Start the Flask backend server with real data (with automatic fallback to mock data if needed)
+3. Start the Flask backend server with real data (with automatic fallback to mock data)
 4. Open the API test page in your browser
-
-### Running with Mock Data (For Development)
-
-```bash
-./run_test.py
-```
-
-This script will:
-1. Test the Google Ads API connection
-2. Start the Flask backend server
-3. Start the React frontend development server
-4. Open a browser to view the dashboard
 
 ### Running Components Separately
 

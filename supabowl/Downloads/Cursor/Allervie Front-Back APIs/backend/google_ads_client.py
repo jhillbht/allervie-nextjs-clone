@@ -34,6 +34,14 @@ def get_google_ads_client():
         None: If client creation fails
     """
     try:
+        # Try to import the environment setting
+        try:
+            from config import ENVIRONMENT
+            logger.info(f"Current environment: {ENVIRONMENT}")
+        except ImportError:
+            ENVIRONMENT = "production"
+            logger.info(f"Defaulting to environment: {ENVIRONMENT}")
+        
         # Try different locations for the google-ads.yaml file
         possible_paths = [
             Path(__file__).parent.parent / "credentials" / "google-ads.yaml",  # Parent credentials directory
@@ -68,22 +76,31 @@ def get_google_ads_client():
                 required_fields = ['client_id', 'client_secret', 'developer_token', 'login_customer_id', 'refresh_token']
                 missing_fields = [field for field in required_fields if not config.get(field)]
                 if missing_fields:
-                    logger.error(f"Missing required fields in google-ads.yaml: {missing_fields}")
+                    error_msg = f"Missing required fields in google-ads.yaml: {missing_fields}"
+                    logger.error(error_msg)
+                    
+                    if ENVIRONMENT == "production":
+                        raise ValueError(error_msg)
                     return None
                     
         except Exception as yaml_error:
             logger.error(f"Error reading YAML file: {yaml_error}")
+            if ENVIRONMENT == "production":
+                raise
             return None
         
-        # Load the client with the API version from the YAML file, defaulting to v17
-        api_version = config.get('api_version', 'v17') if config else 'v17'
+        # Load the client with the API version from the YAML file, defaulting to v14
+        api_version = config.get('api_version', 'v14') if config else 'v14'
         
         try:
             client = GoogleAdsClient.load_from_storage(yaml_path, version=api_version)
             
             # Verify the client was created correctly
             if client is None:
-                logger.error("GoogleAdsClient.load_from_storage returned None")
+                error_msg = "GoogleAdsClient.load_from_storage returned None"
+                logger.error(error_msg)
+                if ENVIRONMENT == "production":
+                    raise ValueError(error_msg)
                 return None
                 
             logger.info(f"Successfully loaded Google Ads client with API version {api_version}")
@@ -91,7 +108,10 @@ def get_google_ads_client():
             
             # Test if the client has the necessary methods
             if not hasattr(client, 'get_service'):
-                logger.error("Client missing required 'get_service' method")
+                error_msg = "Client missing required 'get_service' method"
+                logger.error(error_msg)
+                if ENVIRONMENT == "production":
+                    raise ValueError(error_msg)
                 return None
                 
             # Try to get a service to verify the client works
@@ -101,8 +121,8 @@ def get_google_ads_client():
                 
                 # Test the service with a simple query
                 test_query = """
-                    SELECT campaign.id
-                    FROM campaign
+                    SELECT customer.id
+                    FROM customer
                     LIMIT 1
                 """
                 try:
@@ -113,10 +133,14 @@ def get_google_ads_client():
                     logger.info("Successfully executed test query")
                 except Exception as query_error:
                     logger.error(f"Test query failed: {query_error}")
+                    if ENVIRONMENT == "production":
+                        raise
                     return None
                     
             except Exception as service_error:
                 logger.error(f"Error getting GoogleAdsService: {service_error}")
+                if ENVIRONMENT == "production":
+                    raise
                 return None
                 
             return client
@@ -124,7 +148,7 @@ def get_google_ads_client():
             logger.error(f"Failed to create client with API version {api_version}: {e}")
             
             # Fall back to try alternative versions
-            fallback_versions = ['v19', 'v18', 'v17', 'v16', 'v14', 'v13', 'v12']
+            fallback_versions = ['v14', 'v13', 'v12']
             for version in fallback_versions:
                 try:
                     logger.info(f"Trying fallback to API version {version}")
@@ -136,10 +160,14 @@ def get_google_ads_client():
                     continue  # Try next version
                     
             logger.error("All fallback version attempts failed")
+            if ENVIRONMENT == "production":
+                raise ValueError("Failed to create Google Ads client with any API version")
             return None
     except Exception as e:
         logger.error(f"Error getting Google Ads client: {e}")
         logger.error(traceback.format_exc())
+        if ENVIRONMENT == "production":
+            raise
         return None
 
 def get_ads_performance(start_date=None, end_date=None, previous_period=False):
