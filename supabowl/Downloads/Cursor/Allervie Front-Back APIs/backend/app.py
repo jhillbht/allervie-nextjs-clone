@@ -81,27 +81,29 @@ def get_credentials(token=None):
     """
     Get credentials based on the token
     """
-    # Check if we should use real data
-    use_real = USE_REAL_ADS_CLIENT or session.get('use_real_ads_client', False)
-    
-    if token and use_real:
-        # For real data, we would validate the token and return real credentials
-        return {
-            'valid': True,
-            'user_id': 'google-oauth2|123456789',
-            'email': 'user@example.com',
-            'name': 'Test User',
-            'use_real_data': True
-        }
-    else:
-        # For mock data
-        return {
-            'valid': True,
-            'user_id': 'google-oauth2|123456789',
-            'email': 'user@example.com',
-            'name': 'Test User',
-            'use_real_data': False
-        }
+    if not token:
+        logger.warning("No token provided for authentication")
+        return None
+        
+    # In production, we only use real tokens and real credentials
+    try:
+        # This would be where we validate the real token
+        # and retrieve the corresponding credentials
+        # For now, we'll return a placeholder for real OAuth token
+        if not token.startswith('mock-'):
+            return {
+                'valid': True,
+                'user_id': f"google-oauth-{token[:8]}",
+                'email': 'real.user@example.com',
+                'name': 'Authenticated User',
+                'use_real_data': True
+            }
+        else:
+            logger.warning("Mock tokens are not accepted in production mode")
+            return None
+    except Exception as e:
+        logger.error(f"Error validating credentials: {str(e)}")
+        return None
 
 # Authentication routes
 @app.route('/api/auth/login', methods=['GET'])
@@ -151,27 +153,8 @@ def callback():
     """Handle the OAuth 2.0 callback."""
     # Check if this is a mock auth callback
     if 'mock' in request.args:
-        # Check if mock auth is allowed
-        if not ALLOW_MOCK_AUTH:
-            logger.warning("Mock authentication is disabled in production mode")
-            return redirect(f"{FRONTEND_URL}/login?error=mock_auth_disabled")
-            
-        logger.info("Processing mock authentication callback")
-        # Create a mock token
-        token = {
-            'access_token': 'mock-token-' + str(random.randint(1000, 9999)),
-            'id_token': 'google-oauth2|123456789',
-            'expires_in': 3600
-        }
-        
-        # Store the token
-        TOKENS[token['id_token']] = token
-        logger.info(f"Created mock token: {token['access_token']}")
-        
-        # Redirect to the frontend with the token
-        redirect_url = f"{FRONTEND_URL}/login?token={token['access_token']}"
-        logger.info(f"Redirecting to: {redirect_url}")
-        return redirect(redirect_url)
+        logger.warning("Mock authentication is disabled in production mode")
+        return redirect(f"{FRONTEND_URL}/login?error=mock_auth_disabled")
     
     # Handle real OAuth callback
     try:
@@ -539,7 +522,10 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'timestamp': datetime.now().isoformat(),
-        'service': 'Allervie Analytics API'
+        'service': 'Allervie Analytics API',
+        'environment': ENVIRONMENT,
+        'version': '1.0.0',
+        'apiAvailable': True
     })
 
 @app.route('/api/endpoints', methods=['GET'])
@@ -583,32 +569,13 @@ def list_endpoints():
 
 @app.route('/api/auth/mock-token', methods=['GET'])
 def mock_token():
-    """Generate a mock token for testing"""
-    # Check if mock auth is allowed
-    if not ALLOW_MOCK_AUTH:
-        logger.warning("Mock authentication is disabled in production mode")
-        return jsonify({
-            "error": "Mock authentication is disabled in production mode",
-            "message": "Please use real Google OAuth authentication"
-        }), 403
-        
-    logger.info("Generating mock token for testing")
-    
-    # Create a mock token
-    mock_token = {
-        'token': 'mock-token-' + str(random.randint(1000, 9999)),
-        'expires_at': (datetime.now() + timedelta(hours=1)).isoformat()
-    }
-    
-    # Store the token in the session
-    session['token'] = mock_token['token']
-    session['user_info'] = {
-        'email': 'test@example.com',
-        'name': 'Test User',
-        'picture': 'https://ui-avatars.com/api/?name=Test+User&background=random'
-    }
-    
-    return jsonify(mock_token)
+    """This endpoint is disabled in production mode"""
+    logger.warning("Mock authentication is disabled in production mode")
+    return jsonify({
+        "error": "Mock authentication disabled",
+        "message": "Mock authentication is disabled in production mode. Use the real OAuth authentication flow.",
+        "environment": ENVIRONMENT
+    }), 403
 
 @app.route('/api/auth/use-real-ads-client', methods=['GET'])
 def use_real_ads_client():
