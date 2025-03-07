@@ -190,6 +190,7 @@ For detailed instructions on setting up and troubleshooting the Google Ads integ
 - [Google Ads Setup Guide](GOOGLE_ADS_SETUP.md): Step-by-step instructions for setting up Google Ads API integration
 - [Google Ads Troubleshooting Guide](GOOGLE_ADS_TROUBLESHOOTING.md): Solutions for common integration issues
 - [Manager Account (MCC) Setup Guide](MCC_SETUP.md): Special instructions for using Google Ads Manager accounts
+- [Real Token Usage Guide](REAL_TOKEN_USAGE.md): How to get and use real OAuth tokens (no mock data)
 
 ## Troubleshooting
 
