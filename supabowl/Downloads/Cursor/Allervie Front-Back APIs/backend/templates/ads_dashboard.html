@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Ads API Dashboard</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .metric-card {
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+            margin-bottom: 20px;
+        }
+        .metric-card:hover {
+            transform: translateY(-5px);
+        }
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+        }
+        .metric-change {
+            font-size: 0.9rem;
+        }
+        .positive-change {
+            color: #10b981;
+        }
+        .negative-change {
+            color: #ef4444;
+        }
+        .header {
+            background-color: #f8f9fa;
+            padding: 20px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .date-picker {
+            max-width: 150px;
+        }
+        /* Loading spinner */
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 2s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Funnel Visualization Styles */
+        .funnel-container {
+            padding: 20px;
+            background-color: #222;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            color: white;
+        }
+        .funnel-step {
+            position: relative;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+        .funnel-step:hover {
+            transform: translateX(5px);
+        }
+        .funnel-bar {
+            height: 40px;
+            background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            padding-left: 15px;
+            color: white;
+            font-weight: 500;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
+        }
+        .funnel-label {
+            z-index: 1;
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            padding-right: 15px;
+        }
+        .funnel-value {
+            font-weight: bold;
+            text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+        }
+        .funnel-rate {
+            font-size: 0.85rem;
+            color: #a1a1aa;
+            margin-left: 15px;
+        }
+        .funnel-connector {
+            width: 0;
+            height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-top: 10px solid #3b82f6;
+            margin: 0 auto;
+            filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3));
+        }
+        .scale-indicator {
+            font-size: 0.8rem;
+            color: #a1a1aa;
+            background-color: rgba(0, 0, 0, 0.2);
+            padding: 5px 10px;
+            border-radius: 4px;
+            margin-bottom: 15px !important;
+        }
+        .scale-icon {
+            font-size: 1.2rem;
+        }
+        .cut-mark {
+            position: absolute;
+            right: 20px;
+            top: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 3px;
+        }
+        .cut-line {
+            width: 15px;
+            height: 2px;
+            background-color: rgba(255, 255, 255, 0.7);
+            transform: rotate(-45deg);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <h1>Allervie Analytics Dashboard</h1>
+                    <p class="text-muted">Google Ads Performance Data</p>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex justify-content-end">
+                        <div class="d-flex me-3">
+                            <div class="me-2">
+                                <label for="start-date" class="form-label">Start Date</label>
+                                <input type="date" id="start-date" class="form-control date-picker">
+                            </div>
+                            <div>
+                                <label for="end-date" class="form-label">End Date</label>
+                                <input type="date" id="end-date" class="form-control date-picker">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="form-label">&nbsp;</label>
+                            <button id="refresh-btn" class="btn btn-primary d-block">Refresh Data</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mt-4">
+        <!-- Performance Metrics -->
+        <div class="row" id="metrics-container">
+            <div class="col-12">
+                <div class="loader" id="metrics-loader"></div>
+            </div>
+        </div>
+
+        <!-- Performance Chart and Funnel Row -->
+        <div class="row mt-4">
+            <!-- Performance Chart -->
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Performance Overview</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="performance-chart" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Conversion Funnel -->
+            <div class="col-lg-4">
+                <div class="card bg-dark text-white mb-3">
+                    <div class="card-header bg-dark text-white">
+                        <h5>Conversion Funnel</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="funnel-container" class="funnel-container">
+                            <div class="loader" id="funnel-loader"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Campaign Visualization (Under Funnel) -->
+                <div class="card h-100">
+                    <div class="card-header p-2">
+                        <h6 class="mb-0">Campaign Visualization</h6>
+                    </div>
+                    <div class="card-body p-2">
+                        <div class="d-flex align-items-center mb-2 justify-content-between">
+                            <select id="chart-metric" class="form-select form-select-sm me-2" style="max-width: 110px">
+                                <option value="impressions">Impressions</option>
+                                <option value="clicks">Clicks</option>
+                                <option value="ctr">CTR</option>
+                                <option value="cost">Cost</option>
+                            </select>
+                            <div>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <input type="radio" class="btn-check" name="chart-type" id="chart-bar" value="bar" checked autocomplete="off">
+                                    <label class="btn btn-outline-primary btn-sm py-0" for="chart-bar">Bar</label>
+                                    <input type="radio" class="btn-check" name="chart-type" id="chart-pie" value="pie" autocomplete="off">
+                                    <label class="btn btn-outline-primary btn-sm py-0" for="chart-pie">Pie</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="height: 200px">
+                            <canvas id="campaigns-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Campaign Table -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5>Campaign Performance</h5>
+                        <div class="d-flex align-items-center">
+                            <div class="me-3">
+                                <select id="region-filter" class="form-select form-select-sm">
+                                    <option value="all">All Regions</option>
+                                    <option value="southeast">Southeast</option>
+                                    <option value="northeast">Northeast</option>
+                                    <option value="midwest">Midwest</option>
+                                    <option value="southwest">Southwest</option>
+                                    <option value="west">West</option>
+                                </select>
+                            </div>
+                            <div class="me-3">
+                                <select id="campaign-type-filter" class="form-select form-select-sm">
+                                    <option value="all">All Campaign Types</option>
+                                    <option value="Search">Search</option>
+                                    <option value="PMax">Performance Max</option>
+                                    <option value="Brand">Brand</option>
+                                    <option value="NonBrand">Non-Brand</option>
+                                </select>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="show-active-only">
+                                <label class="form-check-label" for="show-active-only">Show Active Only</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="campaigns-table">
+                                <thead>
+                                    <tr>
+                                        <th>Campaign</th>
+                                        <th>Status</th>
+                                        <th>Impressions</th>
+                                        <th>Clicks</th>
+                                        <th>CTR</th>
+                                        <th>Cost</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="campaigns-tbody">
+                                    <tr>
+                                        <td colspan="7" class="text-center">
+                                            <div class="loader" id="campaigns-loader"></div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ad Groups Section -->
+        <div class="row mt-4" id="ad-groups-section" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5>Ad Group Performance</h5>
+                        <button id="back-to-campaigns" class="btn btn-sm btn-outline-secondary">Back to Campaigns</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="ad-groups-table">
+                                <thead>
+                                    <tr>
+                                        <th>Ad Group</th>
+                                        <th>Status</th>
+                                        <th>Impressions</th>
+                                        <th>Clicks</th>
+                                        <th>CTR</th>
+                                        <th>Cost</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ad-groups-tbody">
+                                    <tr>
+                                        <td colspan="6" class="text-center">
+                                            <div class="loader" id="ad-groups-loader"></div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Error Modal -->
+    <div class="modal fade" id="error-modal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">API Error</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="error-message">There was an error accessing the API.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Configuration
+        const API_BASE_URL = 'http://localhost:5002/api';
+        let performanceChart = null;
+        let campaignsChart = null;
+
+        // DOM elements
+        const metricsContainer = document.getElementById('metrics-container');
+        const metricsLoader = document.getElementById('metrics-loader');
+        const campaignsTable = document.getElementById('campaigns-table');
+        const campaignsBody = document.getElementById('campaigns-tbody');
+        const campaignsLoader = document.getElementById('campaigns-loader');
+        const adGroupsSection = document.getElementById('ad-groups-section');
+        const adGroupsBody = document.getElementById('ad-groups-tbody');
+        const adGroupsLoader = document.getElementById('ad-groups-loader');
+        const backToCampaignsBtn = document.getElementById('back-to-campaigns');
+        const startDateInput = document.getElementById('start-date');
+        const endDateInput = document.getElementById('end-date');
+        const refreshBtn = document.getElementById('refresh-btn');
+        const showActiveOnlyCheckbox = document.getElementById('show-active-only');
+        const regionFilterSelect = document.getElementById('region-filter');
+        const campaignTypeFilterSelect = document.getElementById('campaign-type-filter');
+        const chartMetricSelect = document.getElementById('chart-metric');
+        const chartBarRadio = document.getElementById('chart-bar');
+        const chartPieRadio = document.getElementById('chart-pie');
+        const errorModal = new bootstrap.Modal(document.getElementById('error-modal'));
+        const errorMessage = document.getElementById('error-message');
+        const funnelContainer = document.getElementById('funnel-container');
+        const funnelLoader = document.getElementById('funnel-loader');
+        
+        // Define regions by state abbreviations
+        const stateRegions = {
+            // Southeast
+            'AL': 'southeast', // Alabama
+            'AR': 'southeast', // Arkansas
+            'FL': 'southeast', // Florida
+            'GA': 'southeast', // Georgia
+            'KY': 'southeast', // Kentucky
+            'LA': 'southeast', // Louisiana
+            'MS': 'southeast', // Mississippi
+            'NC': 'southeast', // North Carolina
+            'SC': 'southeast', // South Carolina
+            'TN': 'southeast', // Tennessee
+            'VA': 'southeast', // Virginia
+            'WV': 'southeast', // West Virginia
+            
+            // Northeast
+            'CT': 'northeast', // Connecticut
+            'DE': 'northeast', // Delaware
+            'ME': 'northeast', // Maine
+            'MD': 'northeast', // Maryland
+            'MA': 'northeast', // Massachusetts
+            'NH': 'northeast', // New Hampshire
+            'NJ': 'northeast', // New Jersey
+            'NY': 'northeast', // New York
+            'PA': 'northeast', // Pennsylvania
+            'RI': 'northeast', // Rhode Island
+            'VT': 'northeast', // Vermont
+            
+            // Midwest
+            'IL': 'midwest', // Illinois
+            'IN': 'midwest', // Indiana
+            'IA': 'midwest', // Iowa
+            'KS': 'midwest', // Kansas
+            'MI': 'midwest', // Michigan
+            'MN': 'midwest', // Minnesota
+            'MO': 'midwest', // Missouri
+            'NE': 'midwest', // Nebraska
+            'ND': 'midwest', // North Dakota
+            'OH': 'midwest', // Ohio
+            'SD': 'midwest', // South Dakota
+            'WI': 'midwest', // Wisconsin
+            
+            // Southwest
+            'AZ': 'southwest', // Arizona
+            'NM': 'southwest', // New Mexico
+            'OK': 'southwest', // Oklahoma
+            'TX': 'southwest', // Texas
+            
+            // West
+            'AK': 'west', // Alaska
+            'CA': 'west', // California
+            'CO': 'west', // Colorado
+            'HI': 'west', // Hawaii
+            'ID': 'west', // Idaho
+            'MT': 'west', // Montana
+            'NV': 'west', // Nevada
+            'OR': 'west', // Oregon
+            'UT': 'west', // Utah
+            'WA': 'west', // Washington
+            'WY': 'west'  // Wyoming
+        };
+        
+        // Function to get state abbreviation from campaign name
+        function getStateFromCampaignName(campaignName) {
+            // Check if campaign name starts with two letters followed by a dash
+            if (campaignName && campaignName.length >= 3 && campaignName.charAt(2) === '-') {
+                return campaignName.substring(0, 2).toUpperCase();
+            }
+            return null;
+        }
+        
+        // Function to get region from campaign name
+        function getRegionFromCampaignName(campaignName) {
+            const state = getStateFromCampaignName(campaignName);
+            if (state && stateRegions[state]) {
+                return stateRegions[state];
+            }
+            return 'other';
+        }
+        
+        // Function to detect campaign type from campaign name
+        function getCampaignType(campaignName) {
+            if (!campaignName) return 'Unknown';
+            
+            // Check for specific patterns in the campaign name
+            const lowerName = campaignName.toLowerCase();
+            
+            if (lowerName.includes('pmax')) {
+                return 'PMax';
+            } else if (lowerName.includes('search')) {
+                return 'Search';
+            } else if (lowerName.includes('brand_') || lowerName.includes('branded')) {
+                return 'Brand';
+            } else if (lowerName.includes('nonbrand')) {
+                return 'NonBrand';
+            }
+            
+            // G_ usually indicates it's a Google campaign
+            if (campaignName.startsWith('G_')) {
+                if (campaignName.includes('_Brand_')) {
+                    return 'Brand';
+                } else if (campaignName.includes('_NonBrand_')) {
+                    return 'NonBrand';
+                }
+            }
+            
+            // Default to Search if none of the above patterns match
+            return 'Search';
+        }
+
+        // Set default dates
+        const today = new Date();
+        const thirtyDaysAgo = new Date(today);
+        thirtyDaysAgo.setDate(today.getDate() - 30);
+        
+        startDateInput.value = formatDate(thirtyDaysAgo);
+        endDateInput.value = formatDate(today);
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPerformanceData();
+            loadCampaigns();
+            createConversionFunnel();
+        });
+
+        refreshBtn.addEventListener('click', () => {
+            loadPerformanceData();
+            loadCampaigns();
+            createConversionFunnel();
+        });
+
+        backToCampaignsBtn.addEventListener('click', () => {
+            adGroupsSection.style.display = 'none';
+        });
+
+        showActiveOnlyCheckbox.addEventListener('change', () => {
+            displayCampaigns(window.campaignsData || []);
+        });
+        
+        regionFilterSelect.addEventListener('change', () => {
+            displayCampaigns(window.campaignsData || []);
+        });
+        
+        campaignTypeFilterSelect.addEventListener('change', () => {
+            displayCampaigns(window.campaignsData || []);
+        });
+        
+        // Chart control event listeners
+        chartMetricSelect.addEventListener('change', () => {
+            updateCampaignsChart(getFilteredCampaigns());
+        });
+        
+        chartBarRadio.addEventListener('change', () => {
+            if (chartBarRadio.checked) {
+                updateCampaignsChart(getFilteredCampaigns());
+            }
+        });
+        
+        chartPieRadio.addEventListener('change', () => {
+            if (chartPieRadio.checked) {
+                updateCampaignsChart(getFilteredCampaigns());
+            }
+        });
+
+        // Format date helper
+        function formatDate(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // Format number helper
+        function formatNumber(num) {
+            return new Intl.NumberFormat('en-US').format(num);
+        }
+
+        // Format currency helper
+        function formatCurrency(num) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
+        }
+
+        // Get date parameters
+        function getDateParams() {
+            return {
+                start_date: startDateInput.value,
+                end_date: endDateInput.value
+            };
+        }
+
+        // Show error modal
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorModal.show();
+        }
+
+        // Load performance metrics
+        async function loadPerformanceData() {
+            try {
+                metricsContainer.innerHTML = '<div class="col-12"><div class="loader" id="metrics-loader"></div></div>';
+                
+                const params = getDateParams();
+                const response = await fetch(`${API_BASE_URL}/google-ads/performance?start_date=${params.start_date}&end_date=${params.end_date}`);
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                displayMetrics(data);
+                updatePerformanceChart(data);
+            } catch (error) {
+                console.error('Error loading performance data:', error);
+                showError(`Failed to load performance data: ${error.message}`);
+                metricsContainer.innerHTML = '<div class="col-12"><div class="alert alert-danger">Failed to load performance data.</div></div>';
+            }
+        }
+
+        // Display metrics cards
+        function displayMetrics(data) {
+            const metrics = [
+                { id: 'impressions', label: 'Impressions', format: formatNumber },
+                { id: 'clicks', label: 'Clicks', format: formatNumber },
+                { id: 'clickThroughRate', label: 'CTR', format: val => val.toFixed(2) + '%' },
+                { id: 'conversions', label: 'Conversions', format: formatNumber },
+                { id: 'conversionRate', label: 'Conversion Rate', format: val => val.toFixed(2) + '%' },
+                { id: 'cost', label: 'Cost', format: formatCurrency }
+            ];
+            
+            let html = '';
+            
+            metrics.forEach(metric => {
+                const value = data[metric.id]?.value || 0;
+                const change = data[metric.id]?.change || 0;
+                const changeClass = change >= 0 ? 'positive-change' : 'negative-change';
+                const changeIcon = change >= 0 ? '↑' : '↓';
+                
+                html += `
+                <div class="col-md-6 col-lg-3">
+                    <div class="card metric-card p-3">
+                        <h6 class="text-muted">${metric.label}</h6>
+                        <div class="metric-value">${metric.format(value)}</div>
+                        <div class="metric-change ${changeClass}">
+                            ${changeIcon} ${Math.abs(change).toFixed(1)}%
+                        </div>
+                    </div>
+                </div>
+                `;
+            });
+            
+            metricsContainer.innerHTML = html;
+        }
+
+        // Update performance chart
+        function updatePerformanceChart(data) {
+            const ctx = document.getElementById('performance-chart').getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (performanceChart) {
+                performanceChart.destroy();
+            }
+            
+            // Create the chart data
+            const chartData = {
+                labels: ['Clicks (÷3)', 'Conversions', 'Impressions (÷100)', 'Cost (÷10)'],
+                datasets: [{
+                    label: 'Current Period',
+                    data: [
+                        (data.clicks?.value || 0) / 3, // Divide clicks by 3 as requested
+                        data.conversions?.value || 0,
+                        (data.impressions?.value || 0) / 100, // Scale down for visibility
+                        (data.cost?.value || 0) / 10 // Scale down for visibility
+                    ],
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            };
+            
+            // Create the chart
+            performanceChart = new Chart(ctx, {
+                type: 'bar',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load campaigns
+        async function loadCampaigns() {
+            try {
+                campaignsBody.innerHTML = '<tr><td colspan="7" class="text-center"><div class="loader"></div></td></tr>';
+                
+                const params = getDateParams();
+                const response = await fetch(`${API_BASE_URL}/google-ads/campaigns?start_date=${params.start_date}&end_date=${params.end_date}`);
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const campaigns = await response.json();
+                
+                // Store campaigns data globally for filtering
+                window.campaignsData = campaigns;
+                
+                // Add region and campaign type information to each campaign
+                window.campaignsData.forEach(campaign => {
+                    campaign.region = getRegionFromCampaignName(campaign.name);
+                    campaign.state = getStateFromCampaignName(campaign.name);
+                    campaign.type = getCampaignType(campaign.name);
+                });
+                
+                displayCampaigns(window.campaignsData);
+                updateCampaignsChart(getFilteredCampaigns());
+            } catch (error) {
+                console.error('Error loading campaigns:', error);
+                showError(`Failed to load campaigns: ${error.message}`);
+                campaignsBody.innerHTML = '<tr><td colspan="7" class="text-center">Failed to load campaign data.</td></tr>';
+            }
+        }
+
+        // Function to get filtered campaigns based on current filters
+        function getFilteredCampaigns() {
+            if (!window.campaignsData || window.campaignsData.length === 0) {
+                return [];
+            }
+            
+            let filteredCampaigns = [...window.campaignsData];
+            
+            // Filter active campaigns if checkbox is checked
+            if (showActiveOnlyCheckbox.checked) {
+                filteredCampaigns = filteredCampaigns.filter(campaign => campaign.status === 'ENABLED');
+            }
+            
+            // Filter by region if a region is selected
+            const selectedRegion = regionFilterSelect.value;
+            if (selectedRegion !== 'all') {
+                filteredCampaigns = filteredCampaigns.filter(campaign => campaign.region === selectedRegion);
+            }
+            
+            // Filter by campaign type if a type is selected
+            const selectedCampaignType = campaignTypeFilterSelect.value;
+            if (selectedCampaignType !== 'all') {
+                filteredCampaigns = filteredCampaigns.filter(campaign => campaign.type === selectedCampaignType);
+            }
+            
+            // Sort campaigns by impressions (descending)
+            filteredCampaigns.sort((a, b) => (b.impressions || 0) - (a.impressions || 0));
+            
+            return filteredCampaigns;
+        }
+        
+        // Function to update the campaigns chart
+        function updateCampaignsChart(campaigns) {
+            const ctx = document.getElementById('campaigns-chart').getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (campaignsChart) {
+                campaignsChart.destroy();
+            }
+            
+            if (!campaigns || campaigns.length === 0) {
+                // Display a message in the chart area if no data is available
+                ctx.font = '16px Arial';
+                ctx.fillStyle = '#666';
+                ctx.textAlign = 'center';
+                ctx.fillText('No campaign data available for the selected filters', ctx.canvas.width / 2, ctx.canvas.height / 2);
+                return;
+            }
+            
+            // Limit to top 5 campaigns for compact display
+            const topCampaigns = campaigns.slice(0, 5);
+            
+            // Get the selected metric
+            const selectedMetric = chartMetricSelect.value;
+            const chartType = chartBarRadio.checked ? 'bar' : 'pie';
+            
+            // Prepare labels and data based on selected metric
+            const labels = topCampaigns.map(campaign => {
+                // Truncate long campaign names for better display
+                const name = campaign.name;
+                return name.length > 20 ? name.substring(0, 20) + '...' : name;
+            });
+            
+            // Configure metric properties
+            const metricConfig = {
+                impressions: {
+                    label: 'Impressions',
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    format: formatNumber
+                },
+                clicks: {
+                    label: 'Clicks',
+                    backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    format: formatNumber
+                },
+                ctr: {
+                    label: 'CTR (%)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    format: val => val.toFixed(2) + '%'
+                },
+                cost: {
+                    label: 'Cost',
+                    backgroundColor: 'rgba(153, 102, 255, 0.5)',
+                    borderColor: 'rgba(153, 102, 255, 1)',
+                    format: formatCurrency
+                }
+            };
+            
+            // Get values for the selected metric
+            const values = topCampaigns.map(campaign => {
+                if (selectedMetric === 'ctr') {
+                    return campaign.ctr || 0;
+                }
+                return campaign[selectedMetric] || 0;
+            });
+            
+            // Generate background colors for pie chart
+            const backgroundColors = chartType === 'pie' ? 
+                topCampaigns.map((_, index) => {
+                    // Generate colors based on the hue spectrum
+                    const hue = (index / topCampaigns.length) * 360;
+                    return `hsla(${hue}, 70%, 60%, 0.7)`;
+                }) : 
+                Array(topCampaigns.length).fill(metricConfig[selectedMetric].backgroundColor);
+            
+            // Create chart data
+            const data = {
+                labels: labels,
+                datasets: [{
+                    label: metricConfig[selectedMetric].label,
+                    data: values,
+                    backgroundColor: backgroundColors,
+                    borderColor: metricConfig[selectedMetric].borderColor,
+                    borderWidth: 1
+                }]
+            };
+            
+            // Configure options based on chart type
+            const options = chartType === 'bar' ? {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y', // Horizontal bar for better display in small space
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${metricConfig[selectedMetric].format(context.raw)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                if (selectedMetric === 'cost') {
+                                    return value >= 1000 ? `$${value/1000}K` : `$${value}`;
+                                }
+                                return value >= 1000 ? `${value/1000}K` : value;
+                            },
+                            font: {
+                                size: 10
+                            }
+                        }
+                    },
+                    y: {
+                        ticks: {
+                            font: {
+                                size: 9
+                            }
+                        }
+                    }
+                }
+            } : {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            boxWidth: 10,
+                            font: {
+                                size: 9
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = metricConfig[selectedMetric].format(context.raw);
+                                const percentage = ((context.raw / values.reduce((a, b) => a + b, 0)) * 100).toFixed(1);
+                                return `${value} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            };
+            
+            // Create the chart
+            campaignsChart = new Chart(ctx, {
+                type: chartType,
+                data: data,
+                options: options
+            });
+        }
+        
+        // Display campaigns table
+        function displayCampaigns(campaigns) {
+            if (!campaigns || campaigns.length === 0) {
+                campaignsBody.innerHTML = '<tr><td colspan="7" class="text-center">No campaign data available.</td></tr>';
+                return;
+            }
+            
+            let filteredCampaigns = getFilteredCampaigns();
+            
+            let html = '';
+            
+            // Show message if no campaigns match the filter
+            if (filteredCampaigns.length === 0) {
+                campaignsBody.innerHTML = '<tr><td colspan="7" class="text-center">No campaigns match the selected filters.</td></tr>';
+                updateCampaignsChart([]);
+                return;
+            }
+            
+            filteredCampaigns.forEach(campaign => {
+                const statusClass = campaign.status === 'ENABLED' ? 'bg-success' : 
+                                  campaign.status === 'PAUSED' ? 'bg-warning' : 'bg-secondary';
+                
+                // Add region indicator
+                const regionBadge = campaign.region ? 
+                    `<span class="badge bg-info ms-2">${campaign.region.charAt(0).toUpperCase() + campaign.region.slice(1)}</span>` : '';
+                
+                // Add state indicator
+                const stateBadge = campaign.state ? 
+                    `<span class="badge bg-secondary ms-1">${campaign.state}</span>` : '';
+                
+                // Add campaign type indicator with different colors for different types
+                let typeBadgeClass = 'bg-secondary';
+                if (campaign.type === 'Search') typeBadgeClass = 'bg-primary';
+                if (campaign.type === 'PMax') typeBadgeClass = 'bg-success';
+                if (campaign.type === 'Brand') typeBadgeClass = 'bg-warning';
+                if (campaign.type === 'NonBrand') typeBadgeClass = 'bg-danger';
+                
+                const typeBadge = `<span class="badge ${typeBadgeClass} ms-1">${campaign.type}</span>`;
+                
+                html += `
+                <tr data-id="${campaign.id}" data-region="${campaign.region || 'other'}" data-type="${campaign.type || 'Unknown'}">
+                    <td>
+                        ${campaign.name}
+                        ${typeBadge}
+                        ${regionBadge}
+                        ${stateBadge}
+                    </td>
+                    <td><span class="badge ${statusClass}">${campaign.status}</span></td>
+                    <td>${formatNumber(campaign.impressions || 0)}</td>
+                    <td>${formatNumber(campaign.clicks || 0)}</td>
+                    <td>${(campaign.ctr || 0).toFixed(2)}%</td>
+                    <td>${formatCurrency(campaign.cost || 0)}</td>
+                    <td>
+                        <button class="btn btn-sm btn-primary view-ad-groups" data-id="${campaign.id}" data-name="${campaign.name}">
+                            View Ad Groups
+                        </button>
+                    </td>
+                </tr>
+                `;
+            });
+            
+            campaignsBody.innerHTML = html;
+            
+            // Update the campaigns chart with the filtered data
+            updateCampaignsChart(filteredCampaigns);
+            
+            // Add event listeners to view ad groups buttons
+            document.querySelectorAll('.view-ad-groups').forEach(button => {
+                button.addEventListener('click', () => {
+                    const campaignId = button.getAttribute('data-id');
+                    const campaignName = button.getAttribute('data-name');
+                    loadAdGroups(campaignId, campaignName);
+                });
+            });
+        }
+
+        // Load ad groups for a campaign
+        async function loadAdGroups(campaignId, campaignName) {
+            try {
+                adGroupsSection.style.display = 'block';
+                adGroupsBody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="loader"></div></td></tr>';
+                
+                // Update card header
+                const adGroupsHeader = document.querySelector('#ad-groups-section .card-header h5');
+                adGroupsHeader.textContent = `Ad Groups for ${campaignName}`;
+                
+                const params = getDateParams();
+                const response = await fetch(`${API_BASE_URL}/google-ads/ad_groups?start_date=${params.start_date}&end_date=${params.end_date}&campaign_id=${campaignId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const adGroups = await response.json();
+                displayAdGroups(adGroups);
+            } catch (error) {
+                console.error('Error loading ad groups:', error);
+                showError(`Failed to load ad groups: ${error.message}`);
+                adGroupsBody.innerHTML = '<tr><td colspan="6" class="text-center">Failed to load ad group data.</td></tr>';
+            }
+        }
+
+        // Display ad groups table
+        function displayAdGroups(adGroups) {
+            if (!adGroups || adGroups.length === 0) {
+                adGroupsBody.innerHTML = '<tr><td colspan="6" class="text-center">No ad group data available.</td></tr>';
+                return;
+            }
+            
+            // Sort ad groups by impressions (descending)
+            adGroups.sort((a, b) => (b.impressions || 0) - (a.impressions || 0));
+            
+            let html = '';
+            
+            adGroups.forEach(adGroup => {
+                const statusClass = adGroup.status === 'ENABLED' ? 'bg-success' : 
+                                 adGroup.status === 'PAUSED' ? 'bg-warning' : 'bg-secondary';
+                
+                html += `
+                <tr>
+                    <td>${adGroup.name}</td>
+                    <td><span class="badge ${statusClass}">${adGroup.status}</span></td>
+                    <td>${formatNumber(adGroup.impressions || 0)}</td>
+                    <td>${formatNumber(adGroup.clicks || 0)}</td>
+                    <td>${(adGroup.ctr || 0).toFixed(2)}%</td>
+                    <td>${formatCurrency(adGroup.cost || 0)}</td>
+                </tr>
+                `;
+            });
+            
+            adGroupsBody.innerHTML = html;
+        }
+        
+        // Create and display the conversion funnel
+        async function createConversionFunnel() {
+            try {
+                funnelContainer.innerHTML = '<div class="loader" id="funnel-loader"></div>';
+                
+                const params = getDateParams();
+                const response = await fetch(`${API_BASE_URL}/google-ads/performance?start_date=${params.start_date}&end_date=${params.end_date}`);
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Calculate funnel metrics
+                const impressions = data.impressions?.value || 0;
+                const clicks = data.clicks?.value || 0;
+                const conversions = data.conversions?.value || 0;
+                
+                // Calculate rates
+                const clickRate = impressions > 0 ? (clicks / impressions) * 100 : 0;
+                const conversionRate = clicks > 0 ? (conversions / clicks) * 100 : 0;
+                const overallConversionRate = impressions > 0 ? (conversions / impressions) * 100 : 0;
+                
+                // Create funnel steps with adjusted scaling for better visualization
+                // Use a scaling factor to make the funnel more visually meaningful
+                const scaleFactor = 8; // Increased to 8 as requested
+                
+                const funnelSteps = [
+                    {
+                        label: 'Impressions',
+                        value: impressions,
+                        displayValue: `${formatNumber(impressions)}`,
+                        percentage: 100,
+                        rate: '100%',
+                        scaled: true
+                    },
+                    {
+                        label: 'Clicks',
+                        value: clicks,
+                        displayValue: formatNumber(clicks),
+                        // Scale clicks relative to impressions, but multiply by scale factor
+                        percentage: Math.min(100, Math.max(20, (clicks / impressions) * 100 * scaleFactor)),
+                        rate: `${clickRate.toFixed(2)}% of impressions`
+                    },
+                    {
+                        label: 'Conversions',
+                        value: conversions,
+                        displayValue: formatNumber(conversions),
+                        // Scale conversions relative to impressions, but with minimum visibility
+                        percentage: Math.min(100, Math.max(10, (conversions / impressions) * 100 * scaleFactor * 2)),
+                        rate: `${conversionRate.toFixed(2)}% of clicks`
+                    }
+                ];
+                
+                displayFunnel(funnelSteps);
+            } catch (error) {
+                console.error('Error creating conversion funnel:', error);
+                funnelContainer.innerHTML = '<div class="alert alert-danger">Failed to load funnel data.</div>';
+            }
+        }
+        
+        // Display the funnel visualization
+        function displayFunnel(steps) {
+            let html = '';
+            
+            steps.forEach((step, index) => {
+                const width = step.percentage > 0 ? step.percentage : 1; // Ensure minimum width
+                const isLast = index === steps.length - 1;
+                
+                // Create a visual cut mark for the first bar to indicate scaling
+                const cutMark = index === 0 ? `<div class="cut-mark">
+                    <div class="cut-line"></div>
+                    <div class="cut-line"></div>
+                </div>` : '';
+                
+                html += `
+                <div class="funnel-step">
+                    <div class="funnel-bar" style="width: ${Math.max(width, 5)}%">
+                        ${cutMark}
+                        <div class="funnel-label">
+                            <span>${step.label}</span>
+                            <span class="funnel-value">${step.displayValue || formatNumber(step.value)}</span>
+                        </div>
+                    </div>
+                    ${!isLast ? '<div class="funnel-connector"></div>' : ''}
+                </div>
+                <div class="funnel-rate mb-3">${step.rate}</div>
+                `;
+            });
+            
+            funnelContainer.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
