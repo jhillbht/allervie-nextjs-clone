@@ -148,7 +148,7 @@ def get_google_ads_client():
             logger.error(f"Failed to create client with API version {api_version}: {e}")
             
             # Fall back to try alternative versions
-            fallback_versions = ['v14', 'v13', 'v12']
+            fallback_versions = ['v19', 'v18', 'v17']
             for version in fallback_versions:
                 try:
                     logger.info(f"Trying fallback to API version {version}")
@@ -236,15 +236,40 @@ def get_ads_performance(start_date=None, end_date=None, previous_period=False):
         logger.info(f"Will also fetch previous period: {prev_start_date} to {prev_end_date}")
     
     try:
-        # Get customer ID from client
-        customer_id = client.login_customer_id
-        if not customer_id:
-            logger.error("No customer ID found in client configuration")
+        # MCC accounts can't query metrics directly - must use a client account
+        # Get the manager account ID for authentication
+        manager_id = client.login_customer_id
+        if not manager_id:
+            logger.error("No manager ID found in client configuration")
             return None
-            
-        logger.info(f"Using customer ID: {customer_id}")
         
-        # Create Google Ads query with enhanced metrics for v17 API
+        # Get the client account ID from config, falling back to manager ID if not found
+        try:
+            from config import CLIENT_CUSTOMER_ID
+            customer_id = CLIENT_CUSTOMER_ID
+            logger.info(f"Using client account ID from config: {customer_id}")
+        except ImportError:
+            logger.warning("CLIENT_CUSTOMER_ID not found in config, using first non-manager account")
+            # If no client ID is configured, try to find a non-manager account
+            try:
+                customer_service = client.get_service('CustomerService')
+                response = customer_service.list_accessible_customers()
+                
+                # Find first non-manager account (any account other than the login account)
+                for resource_name in response.resource_names:
+                    account_id = resource_name.split('/')[-1]
+                    if account_id != manager_id:
+                        customer_id = account_id
+                        logger.info(f"Using first non-manager account found: {customer_id}")
+                        break
+                else:
+                    logger.error("No non-manager accounts found")
+                    return None
+            except Exception as e:
+                logger.error(f"Error finding client accounts: {e}")
+                return None
+        
+        # Create Google Ads query with enhanced metrics for v19 API
         query = f"""
             SELECT 
                 metrics.impressions, 
@@ -271,7 +296,7 @@ def get_ads_performance(start_date=None, end_date=None, previous_period=False):
         # Execute the query with proper error handling
         try:
             search_response = ga_service.search(
-                customer_id=customer_id,
+                customer_id=customer_id,  # Use the client account ID, not the manager ID
                 query=query
             )
             logger.info("Successfully executed search query")
@@ -344,7 +369,7 @@ def get_ads_performance(start_date=None, end_date=None, previous_period=False):
             prev_query = query.replace(start_date, prev_start_date).replace(end_date, prev_end_date)
             try:
                 prev_response = ga_service.search(
-                    customer_id=customer_id,
+                    customer_id=customer_id,  # Use the client account ID, not the manager ID
                     query=prev_query
                 )
                 

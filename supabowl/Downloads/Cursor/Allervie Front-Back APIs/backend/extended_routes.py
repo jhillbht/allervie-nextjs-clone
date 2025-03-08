@@ -213,10 +213,9 @@ def get_keywords():
     
     # Use only real data
     try:
-        # Create a Google Ads client
-        client = get_google_ads_client()
-        if client and get_search_term_performance:
-            real_data = get_search_term_performance(start_date, end_date, ad_group_id)
+        # Call get_search_term_performance directly with parameters
+        if get_search_term_performance:
+            real_data = get_search_term_performance(start_date=start_date, end_date=end_date, ad_group_id=ad_group_id)
             if real_data:
                 logger.info(f"Successfully retrieved keyword data")
                 return jsonify(real_data)
@@ -257,10 +256,9 @@ def get_ads():
     
     # Use only real data
     try:
-        # Create a Google Ads client
-        client = get_google_ads_client()
-        if client and get_search_term_performance:
-            real_data = get_search_term_performance(start_date, end_date, ad_group_id)
+        # Call get_search_term_performance directly with parameters
+        if get_search_term_performance:
+            real_data = get_search_term_performance(start_date=start_date, end_date=end_date, ad_group_id=ad_group_id)
             if real_data:
                 logger.info(f"Successfully retrieved ad performance data")
                 return jsonify(real_data)

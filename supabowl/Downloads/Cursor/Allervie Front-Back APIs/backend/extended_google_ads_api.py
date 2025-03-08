@@ -44,9 +44,15 @@ def get_campaign_performance(client, days=30):
         google_ads_service = client.get_service("GoogleAdsService")
         logger.info(f"Got GoogleAdsService: {type(google_ads_service).__name__}")
         
-        # Get the customer ID from the client
-        customer_id = client.login_customer_id
-        logger.info(f"Using customer ID: {customer_id}")
+        # Get the client account ID from config, falling back to manager ID if not found
+        try:
+            from config import CLIENT_CUSTOMER_ID
+            customer_id = CLIENT_CUSTOMER_ID
+            logger.info(f"Using client account ID from config: {customer_id}")
+        except ImportError:
+            # Get the customer ID from the client
+            customer_id = client.login_customer_id
+            logger.info(f"Using customer ID from client: {customer_id}")
         
         # Calculate the date range
         end_date = datetime.now().date()
@@ -184,9 +190,15 @@ def get_ad_group_performance(client, days=30):
         # Get the Google Ads service
         google_ads_service = client.get_service("GoogleAdsService")
         
-        # Get the customer ID from the yaml file
-        customer_id = client.login_customer_id
-        logger.info(f"Using customer ID: {customer_id}")
+        # Get the client account ID from config, falling back to manager ID if not found
+        try:
+            from config import CLIENT_CUSTOMER_ID
+            customer_id = CLIENT_CUSTOMER_ID
+            logger.info(f"Using client account ID from config: {customer_id}")
+        except ImportError:
+            # Get the customer ID from the client
+            customer_id = client.login_customer_id
+            logger.info(f"Using customer ID from client: {customer_id}")
         
         # Calculate the date range
         end_date = datetime.now().date()
@@ -307,30 +319,60 @@ def get_ad_group_performance(client, days=30):
         logger.error(traceback.format_exc())
         return None
 
-def get_search_term_performance(client, days=30):
-    """Get search term performance data for the last 30 days"""
+def get_search_term_performance(start_date=None, end_date=None, ad_group_id=None):
+    """
+    Get search term performance data for the specified date range and ad group
+    
+    Args:
+        start_date (str, optional): Start date in YYYY-MM-DD format.
+            Defaults to 30 days ago.
+        end_date (str, optional): End date in YYYY-MM-DD format.
+            Defaults to today.
+        ad_group_id (str, optional): Filter by specific ad group ID.
+            Defaults to None (all ad groups).
+    """
     try:
+        # Create a Google Ads client
+        from google_ads_client import get_google_ads_client
+        client = get_google_ads_client()
         if not client:
-            logger.error("No Google Ads client provided")
+            logger.error("Failed to create Google Ads client")
             return None
         
         # Get the Google Ads service
         google_ads_service = client.get_service("GoogleAdsService")
         
-        # Get the customer ID from the yaml file
-        customer_id = client.login_customer_id
-        logger.info(f"Using customer ID: {customer_id}")
+        # Get the client account ID from config, falling back to manager ID if not found
+        try:
+            from config import CLIENT_CUSTOMER_ID
+            customer_id = CLIENT_CUSTOMER_ID
+            logger.info(f"Using client account ID from config: {customer_id}")
+        except ImportError:
+            # Get the customer ID from the yaml file
+            customer_id = client.login_customer_id
+            logger.warning(f"CLIENT_CUSTOMER_ID not found in config, using login_customer_id: {customer_id}")
         
-        # Calculate the date range
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days)
+        # Calculate the date range if not provided
+        if not end_date:
+            end_date_obj = datetime.now().date()
+            end_date = end_date_obj.strftime("%Y-%m-%d")
+        else:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            
+        if not start_date:
+            start_date_obj = end_date_obj - timedelta(days=30)
+            start_date = start_date_obj.strftime("%Y-%m-%d")
+        else:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
         
         # Format the dates for the query
-        start_date_str = start_date.strftime("%Y-%m-%d")
-        end_date_str = end_date.strftime("%Y-%m-%d")
+        start_date_str = start_date
+        end_date_str = end_date
         logger.info(f"Querying data from {start_date_str} to {end_date_str}")
         
-        # Build the query
+        # Build the query with optional ad_group_id filter
+        ad_group_filter = f"AND ad_group.id = {ad_group_id}" if ad_group_id else ""
+        
         query = f"""
             SELECT
                 campaign.id,
@@ -344,18 +386,31 @@ def get_search_term_performance(client, days=30):
                 metrics.ctr
             FROM search_term_view
             WHERE segments.date BETWEEN '{start_date_str}' AND '{end_date_str}'
+            {ad_group_filter}
             ORDER BY metrics.impressions DESC
             LIMIT 1000
         """
         
         # Execute the query
         logger.info("Executing Google Ads API query for search terms")
-        search_request = client.get_type("SearchGoogleAdsRequest")
-        search_request.customer_id = customer_id
-        search_request.query = query
         
-        # Get the results
-        response = google_ads_service.search(request=search_request)
+        try:
+            # First try the direct v19 style
+            logger.info(f"Trying direct parameter style with customer_id={customer_id}")
+            response = google_ads_service.search(
+                customer_id=customer_id,
+                query=query
+            )
+            logger.info("Direct parameter style succeeded")
+        except Exception as e:
+            logger.warning(f"Direct parameter style failed: {e}, trying legacy style")
+            
+            # Fall back to legacy style
+            search_request = client.get_type("SearchGoogleAdsRequest")
+            search_request.customer_id = customer_id
+            search_request.query = query
+            response = google_ads_service.search(request=search_request)
+            logger.info("Legacy parameter style succeeded")
         
         # Process the results
         search_terms = []
