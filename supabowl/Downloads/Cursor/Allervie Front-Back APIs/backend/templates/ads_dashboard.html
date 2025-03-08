@@ -584,6 +584,11 @@
                 const response = await fetch(`${API_BASE_URL}/google-ads/performance?start_date=${params.start_date}&end_date=${params.end_date}`);
                 
                 if (!response.ok) {
+                    // If unauthorized (401), redirect to login
+                    if (response.status === 401) {
+                        window.location.href = '/api/auth/login';
+                        return;
+                    }
                     throw new Error(`API error: ${response.status}`);
                 }
                 
@@ -682,6 +687,11 @@
                 const response = await fetch(`${API_BASE_URL}/google-ads/campaigns?start_date=${params.start_date}&end_date=${params.end_date}`);
                 
                 if (!response.ok) {
+                    // If unauthorized (401), redirect to login
+                    if (response.status === 401) {
+                        window.location.href = '/api/auth/login';
+                        return;
+                    }
                     throw new Error(`API error: ${response.status}`);
                 }
                 
@@ -990,6 +1000,11 @@
                 const response = await fetch(`${API_BASE_URL}/google-ads/ad_groups?start_date=${params.start_date}&end_date=${params.end_date}&campaign_id=${campaignId}`);
                 
                 if (!response.ok) {
+                    // If unauthorized (401), redirect to login
+                    if (response.status === 401) {
+                        window.location.href = '/api/auth/login';
+                        return;
+                    }
                     throw new Error(`API error: ${response.status}`);
                 }
                 

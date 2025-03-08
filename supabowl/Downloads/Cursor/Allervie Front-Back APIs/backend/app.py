@@ -334,13 +334,13 @@ def ads_performance():
     end_date = request.args.get('end_date')
     previous_period = request.args.get('previous_period', 'false').lower() == 'true'
     
-    # Verify authentication (for testing, we'll allow the request even without a proper token)
+    # Verify authentication
     auth_header = request.headers.get('Authorization', '')
-    use_test_token = True  # Set this to True to allow testing without proper auth
     
-    if not auth_header.startswith('Bearer ') and not use_test_token:
+    # Require either a Bearer token or an authenticated session
+    if not auth_header.startswith('Bearer ') and 'user_id' not in session:
         logger.warning("Unauthorized request to Google Ads performance endpoint")
-        return jsonify({"error": "Unauthorized"}), 401
+        return jsonify({"error": "Unauthorized", "message": "Authentication required"}), 401
     
     # Extract token
     token = auth_header.split(' ')[1] if auth_header.startswith('Bearer ') else 'test-token'
@@ -794,11 +794,22 @@ def api_endpoints_page():
     """Serve the api_endpoints.html page"""
     return render_template('api_endpoints.html')
 
+@app.route('/ads-dashboard', methods=['GET'])
+def ads_dashboard_page():
+    """Serve the Google Ads dashboard page with OAuth authentication"""
+    # Check for authorized session
+    if 'user_id' not in session:
+        # Redirect to login page if not authenticated
+        return redirect(url_for('login'))
+    
+    return render_template('ads_dashboard.html')
+
 if __name__ == '__main__':
     port = 5002  # Changed from 5001 to avoid conflicts
     debug = os.getenv('FLASK_ENV', 'production') == 'development'
     
     print(f"Starting Allervie Analytics API on port {port}")
     print(f"Frontend URL: {os.getenv('FRONTEND_URL', 'http://localhost:3000')}")
+    print(f"Test dashboard available at: http://localhost:{port}/ads-dashboard")
     
     app.run(host='0.0.0.0', port=port, debug=debug)

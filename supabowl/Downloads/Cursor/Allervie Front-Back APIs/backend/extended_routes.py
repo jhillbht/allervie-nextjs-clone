@@ -62,6 +62,14 @@ AVAILABLE_ENDPOINTS = [
 @extended_bp.route('/available_endpoints', methods=['GET'])
 def get_available_endpoints():
     """Get list of available Google Ads API endpoints"""
+    # Verify authentication
+    auth_header = request.headers.get('Authorization', '')
+    
+    # If no authorization header or invalid token format, require authentication
+    if not auth_header.startswith('Bearer ') and 'user_id' not in session:
+        logger.warning("Unauthorized access attempt to available_endpoints")
+        return jsonify({"error": "Unauthorized", "message": "Authentication required"}), 401
+        
     return jsonify(AVAILABLE_ENDPOINTS)
 
 @extended_bp.route('/campaigns', methods=['GET'])
@@ -69,6 +77,14 @@ def get_campaigns():
     """
     Get campaign performance data
     """
+    # Verify authentication
+    auth_header = request.headers.get('Authorization', '')
+    
+    # If no authorization header or invalid token format, require authentication
+    if not auth_header.startswith('Bearer ') and 'user_id' not in session:
+        logger.warning("Unauthorized access attempt to campaigns endpoint")
+        return jsonify({"error": "Unauthorized", "message": "Authentication required"}), 401
+    
     # Get request parameters
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
@@ -114,6 +130,14 @@ def get_ad_groups():
     """
     Get ad group performance data
     """
+    # Verify authentication
+    auth_header = request.headers.get('Authorization', '')
+    
+    # If no authorization header or invalid token format, require authentication
+    if not auth_header.startswith('Bearer ') and 'user_id' not in session:
+        logger.warning("Unauthorized access attempt to ad_groups endpoint")
+        return jsonify({"error": "Unauthorized", "message": "Authentication required"}), 401
+    
     # Get request parameters
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
@@ -160,6 +184,14 @@ def get_search_terms():
     """
     Get search terms performance data
     """
+    # Verify authentication
+    auth_header = request.headers.get('Authorization', '')
+    
+    # If no authorization header or invalid token format, require authentication
+    if not auth_header.startswith('Bearer ') and 'user_id' not in session:
+        logger.warning("Unauthorized access attempt to search_terms endpoint")
+        return jsonify({"error": "Unauthorized", "message": "Authentication required"}), 401
+    
     # Get date range and campaign ID from query parameters
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
@@ -204,6 +236,14 @@ def get_keywords():
     """
     Get keyword performance data
     """
+    # Verify authentication
+    auth_header = request.headers.get('Authorization', '')
+    
+    # If no authorization header or invalid token format, require authentication
+    if not auth_header.startswith('Bearer ') and 'user_id' not in session:
+        logger.warning("Unauthorized access attempt to keywords endpoint")
+        return jsonify({"error": "Unauthorized", "message": "Authentication required"}), 401
+    
     # Get date range and ad group ID from request params
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
@@ -247,6 +287,14 @@ def get_ads():
     """
     Get ad performance data
     """
+    # Verify authentication
+    auth_header = request.headers.get('Authorization', '')
+    
+    # If no authorization header or invalid token format, require authentication
+    if not auth_header.startswith('Bearer ') and 'user_id' not in session:
+        logger.warning("Unauthorized access attempt to ads endpoint")
+        return jsonify({"error": "Unauthorized", "message": "Authentication required"}), 401
+    
     # Get date range and ad group ID from request params
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
