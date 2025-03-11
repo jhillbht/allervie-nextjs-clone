@@ -1,0 +1,49 @@
+name: allervie-analytics-dashboard
+region: nyc
+services:
+- name: api
+  github:
+    branch: google-ads-improvements
+    repo: jhillbht/allervie-dashboard
+    deploy_on_push: true
+  build_command: pip install -r requirements.txt
+  run_command: >
+    python create_google_ads_yaml.py &&
+    cp config.py.digital_ocean config.py &&
+    python app.py
+  http_port: 5002
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  routes:
+  - path: /
+    preserve_path_prefix: true
+  health_check:
+    http_path: /api/health
+  envs:
+  - key: FLASK_APP
+    value: app.py
+  - key: FLASK_ENV
+    value: production
+  - key: ALLOW_MOCK_DATA
+    value: "false"
+  - key: ALLOW_MOCK_AUTH
+    value: "false"
+  - key: ENVIRONMENT
+    value: "production"
+  - key: GOOGLE_ADS_CLIENT_ID
+    value: "22083613754-d1omeg2958vrsndpqg2v1jp0ncm7sr23.apps.googleusercontent.com"
+  - key: GOOGLE_ADS_CLIENT_SECRET
+    type: SECRET
+    value: "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"
+  - key: GOOGLE_ADS_DEVELOPER_TOKEN
+    type: SECRET
+    value: "EkXFENjahSDnpNRZJhWAAw"
+  - key: GOOGLE_ADS_LOGIN_CUSTOMER_ID
+    value: "8127539892"
+  - key: GOOGLE_ADS_REFRESH_TOKEN
+    type: SECRET
+    value: "1//0fd0hT4p-0f4nCgYIARAAGA8SNwF-L9IrExeEoV1QfhOWXSUZCc1I1j_RpHpQ1bJ_xlDCmcDSCZ103BiUsy1MAr6awvafzZ6sPTk"
+  - key: GOOGLE_ADS_USE_PROTO_PLUS
+    value: "true"
+  - key: GOOGLE_ADS_API_VERSION
+    value: "v17"
