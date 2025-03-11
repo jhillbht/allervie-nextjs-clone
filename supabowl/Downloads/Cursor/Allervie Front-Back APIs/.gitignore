@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+ENV/
+.venv/
+.env/
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+.DS_Store
+
+# Logs
+logs/
+*.log
+app.log
+server.log
+
+# OAuth and credentials
+google-ads.yaml
+client_secret.json
+token.json
+credentials.json
+*.refresh_token*
+flask_session/
+.credentials/
+credentials/
+
+# Node.js
+node_modules/
+npm-debug.log
+package-lock.json
+
+# Local data
+dashboard_data.json
+quota_usage.json

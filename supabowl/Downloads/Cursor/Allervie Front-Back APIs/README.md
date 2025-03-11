@@ -84,13 +84,14 @@ This script will:
 1. Set production configuration (no mock data or authentication)
 2. Test the Google Ads API connection
 3. Start the Flask backend server with real data only
-4. Open the API endpoints page in your browser
+4. Open the Google OAuth login page first, then the dashboard
 
 In production mode:
 - Only real Google Ads data will be used
 - No mock data will be returned if real data is unavailable
 - All API errors will be returned as-is for debugging
 - Mock authentication is disabled - only real OAuth flows are allowed
+- Date changes automatically refresh dashboard data
 
 ### Development Mode (With Fallbacks)
 
@@ -109,17 +110,17 @@ In development mode:
 - Mock data will be used as a fallback if real data isn't available
 - Mock authentication is allowed for testing
 
-### Legacy Mode (With Real Ads)
+### Digital Ocean Deployment
 
 ```bash
-./run_with_real_ads.sh
+./deploy-dashboard.sh
 ```
 
 This script will:
-1. Set the configuration to use real Google Ads data
-2. Test the Google Ads API connection
-3. Start the Flask backend server with real data (with automatic fallback to mock data)
-4. Open the API test page in your browser
+1. Check for an existing app or create a new one on DigitalOcean App Platform
+2. Update app configuration with the latest changes
+3. Set up proper environment variables for credentials
+4. Deploy the application with automatic GitHub integration
 
 ### Running Components Separately
 
@@ -178,10 +179,12 @@ This will run a series of tests to verify connectivity with the Google Ads API a
 
 ## Security Considerations
 
-- Token-based authentication using JWT
+- OAuth-based authentication with Google
 - CORS protection for API endpoints
 - Environment variables for sensitive information
 - Protected routes with authentication checks
+- Gitignore configuration for credential files
+- Session management for user authentication
 
 ## Documentation
 
