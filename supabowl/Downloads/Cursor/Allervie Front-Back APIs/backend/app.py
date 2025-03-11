@@ -41,14 +41,31 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Set default values for environment variables
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:5002/api/auth/callback')
-SCOPES = ['https://www.googleapis.com/auth/analytics.readonly']
+SCOPES = ['https://www.googleapis.com/auth/analytics.readonly', 'https://www.googleapis.com/auth/adwords']
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='templates')
 app.wsgi_app = ProxyFix(app.wsgi_app)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'allervie-dashboard-secret-key')
+
+# Add main route for index page that redirects to dashboard if authenticated or login if not
+@app.route('/')
+def index():
+    """Redirect to OAuth login page if not authenticated, or to dashboard if authenticated"""
+    if 'user_id' in session:
+        return redirect('/ads-dashboard')
+    else:
+        return redirect('/api/auth/login')
+
+# Add dashboard route that requires authentication
+@app.route('/ads-dashboard')
+def ads_dashboard():
+    """Render the ads dashboard template, requiring authentication"""
+    if 'user_id' not in session:
+        return redirect('/api/auth/login')
+    return render_template('ads_dashboard.html')
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
 CORS(app, supports_credentials=True)  # Enable CORS for all routes
@@ -118,16 +135,18 @@ def login():
         else:
             # Use mock authentication if no client secret is available
             logger.warning("No client_secret.json found, using mock authentication")
-            return jsonify({
-                'auth_url': f"{FRONTEND_URL}/mock-auth?redirect_uri={REDIRECT_URI}"
-            })
+            return render_template('enable_real_ads.html', error="No client_secret.json found. Please configure Google OAuth credentials.")
     
     try:
+        # Force the correct redirect URI to be http://localhost:5002/api/auth/callback
+        correct_redirect = "http://localhost:5002/api/auth/callback"
+        logger.info(f"Using redirect URI: {correct_redirect}")
+        
         # Create the flow using the client secrets file
         flow = InstalledAppFlow.from_client_secrets_file(
             CLIENT_SECRET_PATH, 
             scopes=SCOPES,
-            redirect_uri=REDIRECT_URI
+            redirect_uri=correct_redirect
         )
         
         # Generate the authorization URL
@@ -138,23 +157,29 @@ def login():
         )
         
         # Store the flow in the session
-        session['flow'] = flow.to_json()
+        # Google OAuth 2.0 flows can't be directly serialized with to_json()
+        # We'll store the client config and other necessary info instead
+        client_config = json.loads(open(CLIENT_SECRET_PATH, 'r').read())
+        session['client_config'] = client_config
+        session['auth_state'] = _ # Save the state
         
-        return jsonify({'auth_url': auth_url})
+        # Redirect directly to Google OAuth screen
+        return redirect(auth_url)
     except Exception as e:
         logger.error(f"Error initiating OAuth flow: {e}")
-        # Fallback to mock authentication
-        return jsonify({
-            'auth_url': f"{FRONTEND_URL}/mock-auth?redirect_uri={REDIRECT_URI}"
-        })
+        # Show error on the enable real ads page
+        return render_template('enable_real_ads.html', error=f"Error initiating OAuth flow: {str(e)}")
 
 @app.route('/api/auth/callback', methods=['GET'])
 def callback():
     """Handle the OAuth 2.0 callback."""
+    # Log that we've received a callback
+    logger.info(f"Received callback with args: {request.args}")
+    
     # Check if this is a mock auth callback
     if 'mock' in request.args:
         logger.warning("Mock authentication is disabled in production mode")
-        return redirect(f"{FRONTEND_URL}/login?error=mock_auth_disabled")
+        return render_template('enable_real_ads.html', error="Mock authentication is disabled in production mode")
     
     # Handle real OAuth callback
     try:
@@ -163,17 +188,21 @@ def callback():
         
         if not code:
             logger.error("No authorization code received")
-            return redirect(f"{FRONTEND_URL}/login?error=no_code")
+            return render_template('enable_real_ads.html', error="No authorization code received")
         
-        # Get the flow from the session
-        if 'flow' not in session:
-            logger.error("No flow found in session")
-            return redirect(f"{FRONTEND_URL}/login?error=no_flow")
+        # Get the client config from the session
+        if 'client_config' not in session:
+            logger.error("No client config found in session")
+            return render_template('enable_real_ads.html', error="No client config found in session")
+        
+        # Create a new flow from the client config, force the redirect URI
+        correct_redirect = "http://localhost:5002/api/auth/callback"
+        logger.info(f"Using redirect URI for token exchange: {correct_redirect}")
         
         flow = InstalledAppFlow.from_client_config(
-            json.loads(session['flow']),
+            session['client_config'],
             scopes=SCOPES,
-            redirect_uri=REDIRECT_URI
+            redirect_uri=correct_redirect
         )
         
         # Exchange the authorization code for tokens
@@ -200,13 +229,16 @@ def callback():
         TOKENS[user_id] = token
         logger.info(f"Created real OAuth token for user: {user_id}")
         
-        # Redirect to the frontend with the token
-        redirect_url = f"{FRONTEND_URL}/login?token={token['access_token']}"
-        logger.info(f"Redirecting to: {redirect_url}")
-        return redirect(redirect_url)
+        # Store user in session
+        session['user_id'] = user_id
+        session['access_token'] = creds.token
+        session['refresh_token'] = creds.refresh_token
+        
+        # Redirect directly to dashboard
+        return redirect('/ads-dashboard')
     except Exception as e:
         logger.error(f"Error in OAuth callback: {e}")
-        return redirect(f"{FRONTEND_URL}/login?error=callback_error")
+        return render_template('enable_real_ads.html', error=f"Error in OAuth callback: {str(e)}")
 
 @app.route('/api/auth/verify', methods=['GET'])
 def verify():
@@ -797,19 +829,61 @@ def api_endpoints_page():
 @app.route('/ads-dashboard', methods=['GET'])
 def ads_dashboard_page():
     """Serve the Google Ads dashboard page with OAuth authentication"""
-    # Check for authorized session
-    if 'user_id' not in session:
-        # Redirect to login page if not authenticated
-        return redirect(url_for('login'))
+    # In development mode with mock auth, auto-authenticate the user
+    if ENVIRONMENT == "development" and ALLOW_MOCK_AUTH:
+        # Set a mock user ID if not already set
+        if 'user_id' not in session:
+            session['user_id'] = f"mock-user-{random.randint(1000, 9999)}"
+            logger.info(f"Auto-authenticated with mock user: {session['user_id']}")
+    else:
+        # Check for authorized session
+        if 'user_id' not in session:
+            # Redirect to login page if not authenticated
+            return redirect(url_for('login'))
     
+    # Check for a 'simple' query parameter to use the simplified dashboard
+    if request.args.get('simple') == 'true':
+        return render_template('ads_dashboard_simple.html')
+    
+    # Default to the regular dashboard
     return render_template('ads_dashboard.html')
+    
+@app.route('/ads-dashboard-simple', methods=['GET'])
+def ads_dashboard_simple_page():
+    """Serve the simplified Google Ads dashboard page with OAuth authentication"""
+    # In development mode with mock auth, auto-authenticate the user
+    if ENVIRONMENT == "development" and ALLOW_MOCK_AUTH:
+        # Set a mock user ID if not already set
+        if 'user_id' not in session:
+            session['user_id'] = f"mock-user-{random.randint(1000, 9999)}"
+            logger.info(f"Auto-authenticated with mock user: {session['user_id']}")
+    else:
+        # Check for authorized session
+        if 'user_id' not in session:
+            # Redirect to login page if not authenticated
+            return redirect(url_for('login'))
+    
+    return render_template('ads_dashboard_simple.html')
 
 if __name__ == '__main__':
-    port = 5002  # Changed from 5001 to avoid conflicts
-    debug = os.getenv('FLASK_ENV', 'production') == 'development'
+    # Default port is 5002 (was changed from 5001 to avoid conflicts)
+    port = int(os.getenv('PORT', 5002))
     
+    # Default to development mode
+    debug = os.getenv('FLASK_DEBUG', 'true').lower() == 'true'
+    
+    # Default to bind to all interfaces for better compatibility
+    host = os.getenv('HOST', '0.0.0.0')
+    
+    print("=" * 70)
     print(f"Starting Allervie Analytics API on port {port}")
+    print(f"Server bound to: {host}")
+    print(f"Debug mode: {'enabled' if debug else 'disabled'}")
     print(f"Frontend URL: {os.getenv('FRONTEND_URL', 'http://localhost:3000')}")
-    print(f"Test dashboard available at: http://localhost:{port}/ads-dashboard")
+    print(f"Dashboard URLs:")
+    print(f" - http://localhost:{port}/ads-dashboard")
+    print(f" - http://127.0.0.1:{port}/ads-dashboard")
+    print("=" * 70)
     
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    # Run the app with the specified host, port and debug settings
+    app.run(host=host, port=port, debug=debug)

@@ -256,6 +256,9 @@
                                     <option value="PMax">Performance Max</option>
                                     <option value="Brand">Brand</option>
                                     <option value="NonBrand">Non-Brand</option>
+                                    <option value="Display">Display</option>
+                                    <option value="Video">Video</option>
+                                    <option value="Shopping">Shopping</option>
                                 </select>
                             </div>
                             <div class="form-check form-switch">
@@ -301,6 +304,55 @@
                         <button id="back-to-campaigns" class="btn btn-sm btn-outline-secondary">Back to Campaigns</button>
                     </div>
                     <div class="card-body">
+                        <!-- Ad Group Visualization Row -->
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <div class="card h-100">
+                                    <div class="card-header p-2">
+                                        <h6 class="mb-0">Ad Group Visualization</h6>
+                                    </div>
+                                    <div class="card-body p-2">
+                                        <div class="d-flex align-items-center mb-2 justify-content-between">
+                                            <select id="adgroup-chart-metric" class="form-select form-select-sm me-2" style="max-width: 110px">
+                                                <option value="impressions">Impressions</option>
+                                                <option value="clicks">Clicks</option>
+                                                <option value="ctr">CTR</option>
+                                                <option value="cost">Cost</option>
+                                            </select>
+                                            <div>
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <input type="radio" class="btn-check" name="adgroup-chart-type" id="adgroup-chart-bar" value="bar" checked autocomplete="off">
+                                                    <label class="btn btn-outline-primary btn-sm py-0" for="adgroup-chart-bar">Bar</label>
+                                                    <input type="radio" class="btn-check" name="adgroup-chart-type" id="adgroup-chart-pie" value="pie" autocomplete="off">
+                                                    <label class="btn btn-outline-primary btn-sm py-0" for="adgroup-chart-pie">Pie</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div style="height: 200px">
+                                            <canvas id="adgroups-chart"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-8">
+                                <div class="card h-100">
+                                    <div class="card-header p-2">
+                                        <h6 class="mb-0">Ad Group Performance Metrics</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row" id="adgroup-metrics-container">
+                                            <!-- Ad group metrics will be added here -->
+                                            <div class="text-center">
+                                                <div class="loader" id="adgroup-metrics-loader"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Ad Group Table -->
                         <div class="table-responsive">
                             <table class="table table-hover" id="ad-groups-table">
                                 <thead>
@@ -351,8 +403,6 @@
     <script>
         // Configuration
         const API_BASE_URL = 'http://localhost:5002/api';
-        let performanceChart = null;
-        let campaignsChart = null;
 
         // DOM elements
         const metricsContainer = document.getElementById('metrics-container');
@@ -363,6 +413,8 @@
         const adGroupsSection = document.getElementById('ad-groups-section');
         const adGroupsBody = document.getElementById('ad-groups-tbody');
         const adGroupsLoader = document.getElementById('ad-groups-loader');
+        const adGroupMetricsContainer = document.getElementById('adgroup-metrics-container');
+        const adGroupMetricsLoader = document.getElementById('adgroup-metrics-loader');
         const backToCampaignsBtn = document.getElementById('back-to-campaigns');
         const startDateInput = document.getElementById('start-date');
         const endDateInput = document.getElementById('end-date');
@@ -373,10 +425,18 @@
         const chartMetricSelect = document.getElementById('chart-metric');
         const chartBarRadio = document.getElementById('chart-bar');
         const chartPieRadio = document.getElementById('chart-pie');
+        const adGroupChartMetricSelect = document.getElementById('adgroup-chart-metric');
+        const adGroupChartBarRadio = document.getElementById('adgroup-chart-bar');
+        const adGroupChartPieRadio = document.getElementById('adgroup-chart-pie');
         const errorModal = new bootstrap.Modal(document.getElementById('error-modal'));
         const errorMessage = document.getElementById('error-message');
         const funnelContainer = document.getElementById('funnel-container');
         const funnelLoader = document.getElementById('funnel-loader');
+        
+        // Chart variables
+        let performanceChart = null;
+        let campaignsChart = null;
+        let adGroupsChart = null;
         
         // Define regions by state abbreviations
         const stateRegions = {
@@ -447,6 +507,41 @@
             if (campaignName && campaignName.length >= 3 && campaignName.charAt(2) === '-') {
                 return campaignName.substring(0, 2).toUpperCase();
             }
+            
+            // Secondary pattern: Check for state code in parentheses like "Campaign Name (TX)"
+            if (campaignName && campaignName.includes('(') && campaignName.includes(')')) {
+                const match = campaignName.match(/\(([A-Za-z]{2})\)/);
+                if (match && match[1]) {
+                    return match[1].toUpperCase();
+                }
+            }
+            
+            // Third pattern: Check for state name in the campaign name
+            const stateNames = {
+                'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR',
+                'california': 'CA', 'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE',
+                'florida': 'FL', 'georgia': 'GA', 'hawaii': 'HI', 'idaho': 'ID',
+                'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA', 'kansas': 'KS',
+                'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
+                'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS',
+                'missouri': 'MO', 'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV',
+                'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY',
+                'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH', 'oklahoma': 'OK',
+                'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+                'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT',
+                'vermont': 'VT', 'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV',
+                'wisconsin': 'WI', 'wyoming': 'WY'
+            };
+            
+            if (campaignName) {
+                const lowerName = campaignName.toLowerCase();
+                for (const stateName in stateNames) {
+                    if (lowerName.includes(stateName)) {
+                        return stateNames[stateName];
+                    }
+                }
+            }
+            
             return null;
         }
         
@@ -456,6 +551,25 @@
             if (state && stateRegions[state]) {
                 return stateRegions[state];
             }
+            
+            // Additional heuristics for region detection
+            if (campaignName) {
+                const lowerName = campaignName.toLowerCase();
+                
+                // Check for direct region mentions
+                if (lowerName.includes('southeast') || lowerName.includes('south east')) {
+                    return 'southeast';
+                } else if (lowerName.includes('northeast') || lowerName.includes('north east')) {
+                    return 'northeast';
+                } else if (lowerName.includes('midwest') || lowerName.includes('mid west')) {
+                    return 'midwest';
+                } else if (lowerName.includes('southwest') || lowerName.includes('south west')) {
+                    return 'southwest';
+                } else if (lowerName.includes('west coast') || lowerName.includes('pacific')) {
+                    return 'west';
+                }
+            }
+            
             return 'other';
         }
         
@@ -466,23 +580,67 @@
             // Check for specific patterns in the campaign name
             const lowerName = campaignName.toLowerCase();
             
-            if (lowerName.includes('pmax')) {
+            // PMax/Performance Max detection
+            if (lowerName.includes('pmax') || 
+                lowerName.includes('performance max') || 
+                lowerName.includes('performance_max') ||
+                lowerName.includes('performancemax')) {
                 return 'PMax';
-            } else if (lowerName.includes('search')) {
+            } 
+            
+            // Search campaign detection
+            else if (lowerName.includes('search') || 
+                    lowerName.includes('_srch_') || 
+                    lowerName.includes('-srch-')) {
+                // Check if it's also a brand campaign
+                if (lowerName.includes('brand') || 
+                    lowerName.includes('_b_') ||
+                    lowerName.includes('-b-')) {
+                    return 'Brand';
+                } 
+                // Check if it's a non-brand campaign
+                else if (lowerName.includes('nonbrand') || 
+                        lowerName.includes('non-brand') || 
+                        lowerName.includes('_nb_') ||
+                        lowerName.includes('-nb-')) {
+                    return 'NonBrand';
+                }
+                // Otherwise, just a regular search campaign
                 return 'Search';
-            } else if (lowerName.includes('brand_') || lowerName.includes('branded')) {
+            } 
+            
+            // Other brand detection
+            else if (lowerName.includes('brand_') || 
+                    lowerName.includes('branded') || 
+                    lowerName.includes('_brand') || 
+                    lowerName.includes('-brand')) {
                 return 'Brand';
-            } else if (lowerName.includes('nonbrand')) {
+            } 
+            
+            // Other non-brand detection
+            else if (lowerName.includes('nonbrand') || 
+                    lowerName.includes('non-brand') || 
+                    lowerName.includes('_non_brand') || 
+                    lowerName.includes('-non-brand')) {
                 return 'NonBrand';
             }
             
-            // G_ usually indicates it's a Google campaign
+            // G_ pattern Google campaign detection
             if (campaignName.startsWith('G_')) {
-                if (campaignName.includes('_Brand_')) {
+                if (campaignName.includes('_Brand_') || campaignName.includes('-Brand-')) {
                     return 'Brand';
-                } else if (campaignName.includes('_NonBrand_')) {
+                } else if (campaignName.includes('_NonBrand_') || campaignName.includes('-NonBrand-')) {
                     return 'NonBrand';
                 }
+            }
+            
+            // Additional campaign type detection
+            if (lowerName.includes('display') || lowerName.includes('_dsp_')) {
+                return 'Display';
+            } else if (lowerName.includes('video') || lowerName.includes('youtube')) {
+                return 'Video';
+            } else if (lowerName.includes('shopping') || lowerName.includes('_sh_')) {
+                return 'Shopping';
             }
             
             // Default to Search if none of the above patterns match
@@ -499,6 +657,19 @@
 
         // Event listeners
         document.addEventListener('DOMContentLoaded', () => {
+            loadPerformanceData();
+            loadCampaigns();
+            createConversionFunnel();
+        });
+
+        // Add date change event listeners to refresh data automatically
+        startDateInput.addEventListener('change', () => {
+            loadPerformanceData();
+            loadCampaigns();
+            createConversionFunnel();
+        });
+
+        endDateInput.addEventListener('change', () => {
             loadPerformanceData();
             loadCampaigns();
             createConversionFunnel();
@@ -526,7 +697,7 @@
             displayCampaigns(window.campaignsData || []);
         });
         
-        // Chart control event listeners
+        // Campaign chart control event listeners
         chartMetricSelect.addEventListener('change', () => {
             updateCampaignsChart(getFilteredCampaigns());
         });
@@ -540,6 +711,25 @@
         chartPieRadio.addEventListener('change', () => {
             if (chartPieRadio.checked) {
                 updateCampaignsChart(getFilteredCampaigns());
+            }
+        });
+        
+        // Ad group chart control event listeners
+        adGroupChartMetricSelect.addEventListener('change', () => {
+            if (window.currentAdGroups) {
+                updateAdGroupsChart(window.currentAdGroups);
+            }
+        });
+        
+        adGroupChartBarRadio.addEventListener('change', () => {
+            if (adGroupChartBarRadio.checked && window.currentAdGroups) {
+                updateAdGroupsChart(window.currentAdGroups);
+            }
+        });
+        
+        adGroupChartPieRadio.addEventListener('change', () => {
+            if (adGroupChartPieRadio.checked && window.currentAdGroups) {
+                updateAdGroupsChart(window.currentAdGroups);
             }
         });
 
@@ -593,6 +783,30 @@
                 }
                 
                 const data = await response.json();
+                
+                // Check if we received an error response
+                if (data.error) {
+                    console.error('Error response from performance API:', data.message);
+                    showError(`Performance API Error: ${data.message}`);
+                    metricsContainer.innerHTML = `<div class="col-12"><div class="alert alert-danger">Error retrieving performance data: ${data.message}</div></div>`;
+                    return;
+                }
+                
+                // Check if we have valid data for at least some metrics
+                const hasValidData = Object.values(data).some(metric => 
+                    typeof metric === 'object' && metric && 'value' in metric && metric.value !== null && metric.value !== undefined
+                );
+                
+                if (!hasValidData) {
+                    console.warn('No valid performance metrics in the API response');
+                    metricsContainer.innerHTML = '<div class="col-12"><div class="alert alert-warning">No performance data available for the selected date range.</div></div>';
+                    return;
+                }
+                
+                // Log the data received from the API
+                console.log('Received performance data:', data);
+                
+                // Display the metrics and update the chart
                 displayMetrics(data);
                 updatePerformanceChart(data);
             } catch (error) {
@@ -695,10 +909,47 @@
                     throw new Error(`API error: ${response.status}`);
                 }
                 
-                const campaigns = await response.json();
+                const result = await response.json();
                 
-                // Store campaigns data globally for filtering
-                window.campaignsData = campaigns;
+                // Check if the response has the expected structure
+                if (result && result.status === 'success' && Array.isArray(result.data)) {
+                    // Store campaigns data globally for filtering
+                    window.campaignsData = result.data;
+                    console.log('Received campaign data in standard structure:', window.campaignsData);
+                } else if (result && Array.isArray(result)) {
+                    // Direct array response
+                    window.campaignsData = result;
+                    console.log('Received campaign data as direct array:', window.campaignsData);
+                } else if (result && result.status === 'error') {
+                    // Handle error response
+                    console.error('Error response from API:', result.message);
+                    showError(`API Error: ${result.message}`);
+                    window.campaignsData = [];
+                    campaignsBody.innerHTML = `<tr><td colspan="7" class="text-center">Error retrieving campaign data: ${result.message}</td></tr>`;
+                    return;
+                } else if (result && result.data && Array.isArray(result.data) && result.data.length === 0) {
+                    // Empty data array
+                    console.warn('API returned empty data array');
+                    window.campaignsData = [];
+                    campaignsBody.innerHTML = '<tr><td colspan="7" class="text-center">No campaign data available from API.</td></tr>';
+                    return;
+                } else {
+                    // Handle unexpected response format
+                    console.error('Unexpected response format:', result);
+                    window.campaignsData = [];
+                    showError(`Unexpected data format from API. Check console for details.`);
+                    campaignsBody.innerHTML = '<tr><td colspan="7" class="text-center">Unexpected data format received from API.</td></tr>';
+                    return;
+                }
+                
+                // Ensure window.campaignsData is an array
+                if (!Array.isArray(window.campaignsData)) {
+                    window.campaignsData = [];
+                    throw new Error('Campaign data is not an array');
+                }
+                
+                // Log the campaigns data for debugging
+                console.log('Campaign data received:', window.campaignsData);
                 
                 // Add region and campaign type information to each campaign
                 window.campaignsData.forEach(campaign => {
@@ -910,6 +1161,169 @@
             });
         }
         
+        // Function to update the ad groups chart
+        function updateAdGroupsChart(adGroups) {
+            const ctx = document.getElementById('adgroups-chart').getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (adGroupsChart) {
+                adGroupsChart.destroy();
+            }
+            
+            if (!adGroups || adGroups.length === 0) {
+                // Display a message in the chart area if no data is available
+                ctx.font = '16px Arial';
+                ctx.fillStyle = '#666';
+                ctx.textAlign = 'center';
+                ctx.fillText('No ad group data available', ctx.canvas.width / 2, ctx.canvas.height / 2);
+                return;
+            }
+            
+            // Get the selected metric
+            const selectedMetric = adGroupChartMetricSelect.value;
+            const chartType = adGroupChartBarRadio.checked ? 'bar' : 'pie';
+            
+            // Prepare labels and data based on selected metric
+            const labels = adGroups.map(adGroup => {
+                // Truncate long ad group names for better display
+                const name = adGroup.name;
+                return name.length > 20 ? name.substring(0, 20) + '...' : name;
+            });
+            
+            // Configure metric properties
+            const metricConfig = {
+                impressions: {
+                    label: 'Impressions',
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    format: formatNumber
+                },
+                clicks: {
+                    label: 'Clicks',
+                    backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    format: formatNumber
+                },
+                ctr: {
+                    label: 'CTR (%)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    format: val => val.toFixed(2) + '%'
+                },
+                cost: {
+                    label: 'Cost',
+                    backgroundColor: 'rgba(153, 102, 255, 0.5)',
+                    borderColor: 'rgba(153, 102, 255, 1)',
+                    format: formatCurrency
+                }
+            };
+            
+            // Get values for the selected metric
+            const values = adGroups.map(adGroup => {
+                if (selectedMetric === 'ctr') {
+                    return adGroup.ctr || 0;
+                }
+                return adGroup[selectedMetric] || 0;
+            });
+            
+            // Generate background colors for pie chart
+            const backgroundColors = chartType === 'pie' ? 
+                adGroups.map((_, index) => {
+                    // Generate colors based on the hue spectrum
+                    const hue = (index / adGroups.length) * 360;
+                    return `hsla(${hue}, 70%, 60%, 0.7)`;
+                }) : 
+                Array(adGroups.length).fill(metricConfig[selectedMetric].backgroundColor);
+            
+            // Create chart data
+            const data = {
+                labels: labels,
+                datasets: [{
+                    label: metricConfig[selectedMetric].label,
+                    data: values,
+                    backgroundColor: backgroundColors,
+                    borderColor: metricConfig[selectedMetric].borderColor,
+                    borderWidth: 1
+                }]
+            };
+            
+            // Configure options based on chart type
+            const options = chartType === 'bar' ? {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y', // Horizontal bar for better display in small space
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${metricConfig[selectedMetric].format(context.raw)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                if (selectedMetric === 'cost') {
+                                    return value >= 1000 ? `$${value/1000}K` : `$${value}`;
+                                }
+                                return value >= 1000 ? `${value/1000}K` : value;
+                            },
+                            font: {
+                                size: 10
+                            }
+                        }
+                    },
+                    y: {
+                        ticks: {
+                            font: {
+                                size: 9
+                            }
+                        }
+                    }
+                }
+            } : {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            boxWidth: 10,
+                            font: {
+                                size: 9
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = metricConfig[selectedMetric].format(context.raw);
+                                const percentage = ((context.raw / values.reduce((a, b) => a + b, 0)) * 100).toFixed(1);
+                                return `${value} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            };
+            
+            // Create the chart
+            adGroupsChart = new Chart(ctx, {
+                type: chartType,
+                data: data,
+                options: options
+            });
+            
+            // Also display ad group metrics summary
+            displayAdGroupMetrics(adGroups);
+        }
+        
         // Display campaigns table
         function displayCampaigns(campaigns) {
             if (!campaigns || campaigns.length === 0) {
@@ -946,6 +1360,9 @@
                 if (campaign.type === 'PMax') typeBadgeClass = 'bg-success';
                 if (campaign.type === 'Brand') typeBadgeClass = 'bg-warning';
                 if (campaign.type === 'NonBrand') typeBadgeClass = 'bg-danger';
+                if (campaign.type === 'Display') typeBadgeClass = 'bg-info';
+                if (campaign.type === 'Video') typeBadgeClass = 'bg-dark';
+                if (campaign.type === 'Shopping') typeBadgeClass = 'bg-success';
                 
                 const typeBadge = `<span class="badge ${typeBadgeClass} ms-1">${campaign.type}</span>`;
                 
@@ -1008,7 +1425,22 @@
                     throw new Error(`API error: ${response.status}`);
                 }
                 
-                const adGroups = await response.json();
+                const result = await response.json();
+                
+                // Check if the response has the expected structure
+                let adGroups = [];
+                
+                if (result && result.status === 'success' && Array.isArray(result.data)) {
+                    // Response with data property
+                    adGroups = result.data;
+                } else if (result && Array.isArray(result)) {
+                    // Direct array response
+                    adGroups = result;
+                } else {
+                    console.error("Unexpected response format for ad groups:", result);
+                    throw new Error("Unexpected data format from API");
+                }
+                
                 displayAdGroups(adGroups);
             } catch (error) {
                 console.error('Error loading ad groups:', error);
@@ -1017,12 +1449,95 @@
             }
         }
 
+        // Display ad group metrics in cards
+        function displayAdGroupMetrics(adGroups) {
+            if (!adGroups || adGroups.length === 0) {
+                adGroupMetricsContainer.innerHTML = '<div class="col-12 text-center">No ad group metrics available</div>';
+                return;
+            }
+            
+            // Calculate totals
+            let totalImpressions = 0;
+            let totalClicks = 0;
+            let totalConversions = 0;
+            let totalCost = 0;
+            
+            adGroups.forEach(adGroup => {
+                totalImpressions += (adGroup.impressions || 0);
+                totalClicks += (adGroup.clicks || 0);
+                totalConversions += (adGroup.conversions || 0);
+                totalCost += (adGroup.cost || 0);
+            });
+            
+            // Calculate overall metrics
+            const avgCtr = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
+            const avgConvRate = totalClicks > 0 ? (totalConversions / totalClicks * 100) : 0;
+            const costPerConv = totalConversions > 0 ? (totalCost / totalConversions) : 0;
+            
+            // Create metrics cards
+            let html = `
+            <div class="col-md-4 mb-2">
+                <div class="card bg-light">
+                    <div class="card-body p-2 text-center">
+                        <div class="small text-muted">Impressions</div>
+                        <div class="h5">${formatNumber(totalImpressions)}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <div class="card bg-light">
+                    <div class="card-body p-2 text-center">
+                        <div class="small text-muted">Clicks</div>
+                        <div class="h5">${formatNumber(totalClicks)}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <div class="card bg-light">
+                    <div class="card-body p-2 text-center">
+                        <div class="small text-muted">CTR</div>
+                        <div class="h5">${avgCtr.toFixed(2)}%</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <div class="card bg-light">
+                    <div class="card-body p-2 text-center">
+                        <div class="small text-muted">Conversions</div>
+                        <div class="h5">${formatNumber(totalConversions)}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <div class="card bg-light">
+                    <div class="card-body p-2 text-center">
+                        <div class="small text-muted">Conv. Rate</div>
+                        <div class="h5">${avgConvRate.toFixed(2)}%</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <div class="card bg-light">
+                    <div class="card-body p-2 text-center">
+                        <div class="small text-muted">Cost</div>
+                        <div class="h5">${formatCurrency(totalCost)}</div>
+                    </div>
+                </div>
+            </div>
+            `;
+            
+            adGroupMetricsContainer.innerHTML = html;
+        }
+
         // Display ad groups table
         function displayAdGroups(adGroups) {
             if (!adGroups || adGroups.length === 0) {
                 adGroupsBody.innerHTML = '<tr><td colspan="6" class="text-center">No ad group data available.</td></tr>';
                 return;
             }
+            
+            // Store the ad groups for use with the visualization
+            window.currentAdGroups = adGroups;
             
             // Sort ad groups by impressions (descending)
             adGroups.sort((a, b) => (b.impressions || 0) - (a.impressions || 0));
@@ -1046,6 +1561,9 @@
             });
             
             adGroupsBody.innerHTML = html;
+            
+            // Update the ad groups chart
+            updateAdGroupsChart(adGroups);
         }
         
         // Create and display the conversion funnel
