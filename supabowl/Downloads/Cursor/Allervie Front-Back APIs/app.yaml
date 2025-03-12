@@ -43,3 +43,11 @@ services:
     value: "true"
   - key: GOOGLE_ADS_API_VERSION
     value: "v17"
+  - key: TOKEN_AUTO_REFRESH_ENABLED
+    value: "true"
+  - key: AUTO_REFRESH_INTERVAL_MINUTES
+    value: "30"
+  - key: CLIENT_CUSTOMER_ID
+    value: "8127539892"
+  - key: USE_ENHANCED_REFRESH
+    value: "true"

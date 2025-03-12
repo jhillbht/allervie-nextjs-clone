@@ -26,6 +26,16 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # Import config
 from config import USE_REAL_ADS_CLIENT, ALLOW_MOCK_DATA, ALLOW_MOCK_AUTH, ENVIRONMENT
 
+# Run app startup script before initializing Flask
+try:
+    import app_startup
+    app_startup.main()
+    logging.info("App startup script executed successfully")
+except Exception as startup_error:
+    logging.error(f"Error executing app startup script: {startup_error}")
+    import traceback
+    logging.error(traceback.format_exc())
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
