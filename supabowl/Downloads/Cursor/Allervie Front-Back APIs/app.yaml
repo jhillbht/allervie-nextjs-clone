@@ -6,26 +6,22 @@ services:
     branch: google-ads-improvements
     repo: jhillbht/allervie-dashboard
     deploy_on_push: true
-  build_command: pip install -r requirements.txt
-  run_command: >
-    python create_google_ads_yaml.py &&
-    cp config.py.digital_ocean config.py &&
-    python app.py
+  dockerfile_path: Dockerfile
   http_port: 5002
-  instance_count: 1
-  instance_size_slug: basic-xxs
   routes:
   - path: /
     preserve_path_prefix: true
   health_check:
     http_path: /api/health
+  instance_count: 1
+  instance_size_slug: basic-xxs
   envs:
   - key: FLASK_APP
     value: app.py
   - key: FLASK_ENV
     value: production
   - key: ALLOW_MOCK_DATA
-    value: "false"
+    value: "false" 
   - key: ALLOW_MOCK_AUTH
     value: "false"
   - key: ENVIRONMENT

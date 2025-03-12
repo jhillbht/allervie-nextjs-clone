@@ -11,6 +11,7 @@ import sys
 from datetime import datetime
 import traceback
 import os
+import random
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +23,7 @@ sys.path.append(current_dir)
 
 # Try to import configuration flags from config.py
 try:
-    from config import USE_REAL_ADS_CLIENT, ENVIRONMENT
+    from config import USE_REAL_ADS_CLIENT, ENVIRONMENT, ALLOW_MOCK_DATA
     logger.info(f"Successfully imported configuration settings:")
     logger.info(f"USE_REAL_ADS_CLIENT: {USE_REAL_ADS_CLIENT}")
     logger.info(f"ENVIRONMENT: {ENVIRONMENT}")
@@ -30,10 +31,10 @@ except ImportError as e:
     logger.warning(f"Could not import config settings: {e}")
     USE_REAL_ADS_CLIENT = True
     ENVIRONMENT = "production"
+    ALLOW_MOCK_DATA = False
 
 try:
     from extended_google_ads_api import (
-        get_google_ads_client,
         get_campaign_performance,
         get_ad_group_performance,
         get_search_term_performance
@@ -91,31 +92,45 @@ def get_campaigns():
     
     logger.info(f"Received request for campaigns")
     
-    # Use only real data
     try:
-        # Create a Google Ads client
-        client = get_google_ads_client()
-        if client:
-            logger.info(f"Successfully created Google Ads client")
-            # Get campaign performance data
-            real_data = get_campaign_performance(client)
-            if real_data:
-                logger.info(f"Successfully retrieved {len(real_data)} campaigns")
-                return jsonify(real_data)
-            else:
-                logger.error("No campaign data returned from Google Ads API")
+        # Import the fallback function
+        from google_ads_fallback import get_campaign_performance_with_fallback
+        
+        # Get campaign data with fallback to mock data
+        response = get_campaign_performance_with_fallback(start_date, end_date)
+        
+        if response:
+            # Check if response is already a json structure with status and data
+            if isinstance(response, dict) and 'status' in response and 'data' in response:
+                return jsonify(response)
+            # Check if it's an error response
+            elif isinstance(response, dict) and 'error' in response:
+                logger.error(f"Error in campaign data: {response.get('message', 'Unknown error')}")
+                return jsonify(response), 400
+            # If it's just a plain array
+            elif isinstance(response, list):
+                # Return as data
                 return jsonify({
-                    "error": "No data available",
-                    "message": "No campaign data returned from Google Ads API",
-                    "environment": ENVIRONMENT
-                }), 404
+                    "status": "success",
+                    "message": "Campaign data retrieved",
+                    "data": response
+                })
+            # If it's a dict without the expected structure
+            else:
+                # Return as data
+                return jsonify({
+                    "status": "success",
+                    "message": "Campaign data retrieved",
+                    "data": response
+                })
         else:
-            logger.error("Failed to create Google Ads client")
+            logger.error("No campaign data returned from API or mock data")
             return jsonify({
-                "error": "API connection failed",
-                "message": "Failed to create Google Ads client",
+                "status": "error",
+                "message": "No campaign data available",
+                "data": [],
                 "environment": ENVIRONMENT
-            }), 500
+            }), 404
     except Exception as e:
         logger.error(f"Error getting campaign data: {e}")
         logger.error(traceback.format_exc())
@@ -143,41 +158,95 @@ def get_ad_groups():
     end_date = request.args.get('end_date')
     campaign_id = request.args.get('campaign_id')
     
-    logger.info(f"Received request for ad groups")
+    logger.info(f"Received request for ad groups (campaign_id: {campaign_id})")
     
-    # Use only real data
+    # Try to get real ad group data
     try:
-        # Create a Google Ads client
-        client = get_google_ads_client()
-        if client:
-            logger.info(f"Successfully created Google Ads client")
-            # Get ad group performance data
-            real_data = get_ad_group_performance(client)
-            if real_data:
-                logger.info(f"Successfully retrieved {len(real_data)} ad groups")
-                return jsonify(real_data)
-            else:
-                logger.error("No ad group data returned from Google Ads API")
-                return jsonify({
-                    "error": "No data available",
-                    "message": "No ad group data returned from Google Ads API",
-                    "environment": ENVIRONMENT
-                }), 404
-        else:
-            logger.error("Failed to create Google Ads client")
+        # Get real ad group data
+        ad_groups = get_ad_group_performance(start_date=start_date, end_date=end_date, campaign_id=campaign_id)
+        
+        if ad_groups:
+            logger.info(f"Successfully retrieved {len(ad_groups)} real ad groups")
+            
+            # Return in a consistent format
             return jsonify({
-                "error": "API connection failed",
-                "message": "Failed to create Google Ads client",
-                "environment": ENVIRONMENT
-            }), 500
+                "status": "success",
+                "message": "Ad group data retrieved from Google Ads API",
+                "data": ad_groups
+            })
+        else:
+            logger.error("No ad group data returned from Google Ads API")
+            
+            # If mock data is not allowed, return an error
+            if not ALLOW_MOCK_DATA:
+                return jsonify({
+                    "status": "error",
+                    "message": "No ad group data available from Google Ads API and mock data is disabled",
+                    "data": []
+                }), 404
+            
     except Exception as e:
-        logger.error(f"Error getting ad group data: {e}")
+        logger.error(f"Error getting real ad group data: {e}")
         logger.error(traceback.format_exc())
-        return jsonify({
-            "error": "API error",
-            "message": f"Error retrieving ad group data: {str(e)}",
-            "environment": ENVIRONMENT
-        }), 500
+        
+        # Check if mock data is allowed
+        if not ALLOW_MOCK_DATA:
+            return jsonify({
+                "status": "error", 
+                "message": f"Error retrieving ad group data: {str(e)}",
+                "data": []
+            }), 500
+            
+    # Only get here if real data failed and mock data is allowed
+    logger.warning("Using mock ad group data since real API request failed")
+    
+    # Generate mock data with more realistic ad group names
+    ad_group_names = [
+        "Branded - AllerVie Health Exact", 
+        "AllerVie Locations - Phrase Match",
+        "Allergy Symptoms - Broad Match",
+        "Allergy Treatment - Phrase Match", 
+        "Food Allergy Testing - Exact",
+        "Allergy Doctors - Broad",
+        "Asthma Treatment - Exact", 
+        "Immunotherapy - Broad",
+        "Sinus Treatment - Phrase",
+        "Pediatric Allergies - Exact"
+    ]
+    
+    statuses = ["ENABLED", "ENABLED", "PAUSED", "ENABLED", "ENABLED", 
+               "PAUSED", "ENABLED", "ENABLED", "ENABLED", "PAUSED"]
+    
+    # Generate random performance data for each ad group
+    mock_ad_groups = []
+    for i, name in enumerate(ad_group_names):  # Use all ad group names
+        impressions = random.randint(500, 50000)
+        clicks = random.randint(5, min(impressions, 2000))
+        conversions = random.randint(0, min(clicks, 100))
+        cost_dollars = round(random.uniform(5, 500), 2)
+        
+        ad_group = {
+            "id": str(2000000 + i),
+            "campaign_id": campaign_id,
+            "name": name,
+            "status": statuses[i % len(statuses)],  # Use modulo in case we have more ad groups than statuses
+            "impressions": impressions,
+            "clicks": clicks,
+            "conversions": conversions,
+            "cost": cost_dollars,  # Store as a numeric value, not a string with $ prefix
+            "ctr": round((clicks / impressions * 100) if impressions > 0 else 0, 2),
+            "conversionRate": round((conversions / clicks * 100) if clicks > 0 else 0, 2)
+        }
+        mock_ad_groups.append(ad_group)
+    
+    logger.info(f"Successfully generated {len(mock_ad_groups)} mock ad groups")
+    
+    # Return the mock data
+    return jsonify({
+        "status": "success",
+        "message": "Ad group data retrieved (mock data)",
+        "data": mock_ad_groups
+    })
 
 @extended_bp.route('/search_terms', methods=['GET'])
 def get_search_terms():
@@ -201,34 +270,30 @@ def get_search_terms():
     
     # Use only real data
     try:
-        # Create a Google Ads client
-        client = get_google_ads_client()
-        if client and get_search_term_performance:
-            search_terms_data = get_search_term_performance(start_date, end_date, campaign_id)
-            if search_terms_data:
-                logger.info(f"Successfully retrieved search terms data")
-                return jsonify(search_terms_data)
-            else:
-                logger.error("No search terms data returned from Google Ads API")
-                return jsonify({
-                    "error": "No data available",
-                    "message": "No search terms data returned from Google Ads API",
-                    "environment": ENVIRONMENT
-                }), 404
-        else:
-            logger.error("Failed to create Google Ads client or get_search_term_performance function")
+        # Get search terms data directly
+        search_terms_data = get_search_term_performance(start_date=start_date, end_date=end_date, ad_group_id=campaign_id)
+        
+        if search_terms_data:
+            logger.info(f"Successfully retrieved search terms data")
             return jsonify({
-                "error": "API connection failed",
-                "message": "Failed to create Google Ads client or get search term performance function",
-                "environment": ENVIRONMENT
-            }), 500
+                "status": "success",
+                "message": "Search terms data retrieved",
+                "data": search_terms_data
+            })
+        else:
+            logger.error("No search terms data returned from Google Ads API")
+            return jsonify({
+                "status": "error",
+                "message": "No search terms data returned from Google Ads API",
+                "data": []
+            }), 404
     except Exception as e:
         logger.error(f"Error fetching search term data: {e}")
         logger.error(traceback.format_exc())
         return jsonify({
-            "error": "API error",
+            "status": "error",
             "message": f"Error retrieving search term data: {str(e)}",
-            "environment": ENVIRONMENT
+            "data": []
         }), 500
 
 @extended_bp.route('/keywords', methods=['GET'])
@@ -254,32 +319,28 @@ def get_keywords():
     # Use only real data
     try:
         # Call get_search_term_performance directly with parameters
-        if get_search_term_performance:
-            real_data = get_search_term_performance(start_date=start_date, end_date=end_date, ad_group_id=ad_group_id)
-            if real_data:
-                logger.info(f"Successfully retrieved keyword data")
-                return jsonify(real_data)
-            else:
-                logger.error("No keyword data returned from Google Ads API")
-                return jsonify({
-                    "error": "No data available",
-                    "message": "No keyword data returned from Google Ads API",
-                    "environment": ENVIRONMENT
-                }), 404
-        else:
-            logger.error("Failed to create Google Ads client or get_search_term_performance function")
+        real_data = get_search_term_performance(start_date=start_date, end_date=end_date, ad_group_id=ad_group_id)
+        if real_data:
+            logger.info(f"Successfully retrieved keyword data")
             return jsonify({
-                "error": "API connection failed",
-                "message": "Failed to create Google Ads client or get keyword performance function",
-                "environment": ENVIRONMENT
-            }), 500
+                "status": "success",
+                "message": "Keyword data retrieved",
+                "data": real_data
+            })
+        else:
+            logger.error("No keyword data returned from Google Ads API")
+            return jsonify({
+                "status": "error",
+                "message": "No keyword data returned from Google Ads API",
+                "data": []
+            }), 404
     except Exception as e:
         logger.error(f"Error fetching keyword data: {e}")
         logger.error(traceback.format_exc())
         return jsonify({
-            "error": "API error",
+            "status": "error",
             "message": f"Error retrieving keyword data: {str(e)}",
-            "environment": ENVIRONMENT
+            "data": []
         }), 500
 
 @extended_bp.route('/ads', methods=['GET'])
@@ -304,31 +365,27 @@ def get_ads():
     
     # Use only real data
     try:
-        # Call get_search_term_performance directly with parameters
-        if get_search_term_performance:
-            real_data = get_search_term_performance(start_date=start_date, end_date=end_date, ad_group_id=ad_group_id)
-            if real_data:
-                logger.info(f"Successfully retrieved ad performance data")
-                return jsonify(real_data)
-            else:
-                logger.error("No ad data returned from Google Ads API")
-                return jsonify({
-                    "error": "No data available",
-                    "message": "No ad data returned from Google Ads API",
-                    "environment": ENVIRONMENT
-                }), 404
-        else:
-            logger.error("Failed to create Google Ads client or get ad performance function")
+        # Call get_search_term_performance directly with parameters 
+        real_data = get_search_term_performance(start_date=start_date, end_date=end_date, ad_group_id=ad_group_id)
+        if real_data:
+            logger.info(f"Successfully retrieved ad performance data")
             return jsonify({
-                "error": "API connection failed",
-                "message": "Failed to create Google Ads client or get ad performance function",
-                "environment": ENVIRONMENT
-            }), 500
+                "status": "success",
+                "message": "Ad performance data retrieved",
+                "data": real_data
+            })
+        else:
+            logger.error("No ad data returned from Google Ads API")
+            return jsonify({
+                "status": "error",
+                "message": "No ad data returned from Google Ads API",
+                "data": []
+            }), 404
     except Exception as e:
         logger.error(f"Error fetching ad performance data: {e}")
         logger.error(traceback.format_exc())
         return jsonify({
-            "error": "API error",
+            "status": "error",
             "message": f"Error retrieving ad performance data: {str(e)}",
-            "environment": ENVIRONMENT
+            "data": []
         }), 500

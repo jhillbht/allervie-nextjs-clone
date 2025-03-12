@@ -31,16 +31,20 @@ except ImportError as e:
     GoogleAdsClient = None
     GoogleAdsException = Exception
 
-def get_campaign_performance(client, days=30):
-    """Get campaign performance data for the last 30 days"""
+def get_campaign_performance(start_date=None, end_date=None, days=30):
+    """Get campaign performance data for the specified date range or last 30 days"""
     try:
+        # Get the Google Ads client
+        from google_ads_client import get_google_ads_client
+        client = get_google_ads_client()
+        
         if not client:
             logger.error("No Google Ads client provided")
             return None
             
         logger.info(f"Client type: {type(client).__name__}")
         
-        # Get the Google Ads service
+        # Get the Google Ads service - fixed name with no quotes at the end
         google_ads_service = client.get_service("GoogleAdsService")
         logger.info(f"Got GoogleAdsService: {type(google_ads_service).__name__}")
         
@@ -54,13 +58,21 @@ def get_campaign_performance(client, days=30):
             customer_id = client.login_customer_id
             logger.info(f"Using customer ID from client: {customer_id}")
         
-        # Calculate the date range
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days)
-        
-        # Format the dates for the query
-        start_date_str = start_date.strftime("%Y-%m-%d")
-        end_date_str = end_date.strftime("%Y-%m-%d")
+        # Calculate the date range if not provided
+        if not end_date:
+            end_date_obj = datetime.now().date()
+            end_date_str = end_date_obj.strftime("%Y-%m-%d")
+        else:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            end_date_str = end_date
+            
+        if not start_date:
+            start_date_obj = end_date_obj - timedelta(days=days)
+            start_date_str = start_date_obj.strftime("%Y-%m-%d")
+        else:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            start_date_str = start_date
+            
         logger.info(f"Querying data from {start_date_str} to {end_date_str}")
         
         # Build the query
@@ -180,9 +192,13 @@ def get_campaign_performance(client, days=30):
         logger.error(traceback.format_exc())
         return None
 
-def get_ad_group_performance(client, days=30):
-    """Get ad group performance data for the last 30 days"""
+def get_ad_group_performance(start_date=None, end_date=None, campaign_id=None, days=30):
+    """Get ad group performance data for the specified date range or last 30 days"""
     try:
+        # Get the Google Ads client
+        from google_ads_client import get_google_ads_client
+        client = get_google_ads_client()
+        
         if not client:
             logger.error("No Google Ads client provided")
             return None
@@ -200,13 +216,21 @@ def get_ad_group_performance(client, days=30):
             customer_id = client.login_customer_id
             logger.info(f"Using customer ID from client: {customer_id}")
         
-        # Calculate the date range
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days)
-        
-        # Format the dates for the query
-        start_date_str = start_date.strftime("%Y-%m-%d")
-        end_date_str = end_date.strftime("%Y-%m-%d")
+        # Calculate the date range if not provided
+        if not end_date:
+            end_date_obj = datetime.now().date()
+            end_date_str = end_date_obj.strftime("%Y-%m-%d")
+        else:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            end_date_str = end_date
+            
+        if not start_date:
+            start_date_obj = end_date_obj - timedelta(days=days)
+            start_date_str = start_date_obj.strftime("%Y-%m-%d")
+        else:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            start_date_str = start_date
+            
         logger.info(f"Querying data from {start_date_str} to {end_date_str}")
         
         # Build the query
