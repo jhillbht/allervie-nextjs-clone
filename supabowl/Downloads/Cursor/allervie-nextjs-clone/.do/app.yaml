@@ -36,10 +36,16 @@ services:
         value: production
         scope: RUN_TIME
       - key: GOOGLE_CLIENT_ID
-        value: ${google.client_id}
-        type: SECRET
+        value: 22083613754-d1omeg2958vrsndpqg2v1jp0ncm7sr23.apps.googleusercontent.com
         scope: RUN_TIME
       - key: GOOGLE_CLIENT_SECRET
-        value: ${google.client_secret}
+        value: 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
         type: SECRET
+        scope: RUN_TIME
+      - key: SECRET_KEY
+        value: allervie-dashboard-next-fastapi-secret-key-2025
+        type: SECRET
+        scope: RUN_TIME
+      - key: CLIENT_CUSTOMER_ID
+        value: 8127539892
         scope: RUN_TIME
