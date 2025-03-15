@@ -8,8 +8,8 @@ services:
     build_command: npm run build
     run_command: npm start
     http_port: 3000
-    instance_size: basic-xxs
     instance_count: 1
+    instance_size_slug: basic-xxs
     routes:
       - path: /
     envs:
@@ -27,8 +27,8 @@ services:
     build_command: pip install -r requirements.txt
     run_command: python main.py
     http_port: 5002
-    instance_size: basic-xxs
     instance_count: 1
+    instance_size_slug: basic-xxs
     routes:
       - path: /api
     envs:
