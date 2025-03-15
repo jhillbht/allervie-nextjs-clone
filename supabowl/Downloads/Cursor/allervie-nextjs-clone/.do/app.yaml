@@ -1,0 +1,45 @@
+name: allervie-dashboard
+region: sfo
+services:
+  - name: web
+    github:
+      repo: jhillbht/allervie-nextjs-clone
+      branch: main
+    build_command: npm run build
+    run_command: npm start
+    http_port: 3000
+    instance_size: basic-xxs
+    instance_count: 1
+    routes:
+      - path: /
+    envs:
+      - key: NEXT_PUBLIC_API_URL
+        value: ${api.INTERNAL_URL}
+        scope: BUILD_TIME
+      - key: NODE_ENV
+        value: production
+        scope: RUN_TIME
+  
+  - name: api
+    github:
+      repo: jhillbht/allervie-fastapi-backend
+      branch: main
+    build_command: pip install -r requirements.txt
+    run_command: python main.py
+    http_port: 5002
+    instance_size: basic-xxs
+    instance_count: 1
+    routes:
+      - path: /api
+    envs:
+      - key: ENVIRONMENT
+        value: production
+        scope: RUN_TIME
+      - key: GOOGLE_CLIENT_ID
+        value: ${google.client_id}
+        type: SECRET
+        scope: RUN_TIME
+      - key: GOOGLE_CLIENT_SECRET
+        value: ${google.client_secret}
+        type: SECRET
+        scope: RUN_TIME

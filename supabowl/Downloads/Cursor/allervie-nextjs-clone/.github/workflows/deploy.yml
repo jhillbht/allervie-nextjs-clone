@@ -1,0 +1,58 @@
+name: Deploy to DigitalOcean App Platform
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Update app spec
+        run: doctl apps update ${{ secrets.DO_APP_ID }} --spec .do/app.yaml
+
+      - name: Create deployment
+        run: doctl apps create-deployment ${{ secrets.DO_APP_ID }}
+
+      - name: Wait for deployment
+        run: |
+          echo "Waiting for deployment to complete..."
+          DEPLOYMENT_ID=$(doctl apps list-deployments ${{ secrets.DO_APP_ID }} --format ID --no-header | head -n1)
+          
+          while true; do
+            STATUS=$(doctl apps get-deployment ${{ secrets.DO_APP_ID }} $DEPLOYMENT_ID --format Phase --no-header)
+            echo "Deployment status: $STATUS"
+            
+            if [ "$STATUS" == "ACTIVE" ]; then
+              echo "Deployment completed successfully!"
+              break
+            elif [ "$STATUS" == "ERROR" ] || [ "$STATUS" == "FAILED" ]; then
+              echo "Deployment failed. Check logs for details."
+              exit 1
+            fi
+            
+            sleep 10
+          done
