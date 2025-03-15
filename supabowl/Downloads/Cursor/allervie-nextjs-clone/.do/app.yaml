@@ -1,4 +1,4 @@
-name: allervie-dashboard
+name: allervie-nextjs-dashboard
 region: sfo
 services:
   - name: web
