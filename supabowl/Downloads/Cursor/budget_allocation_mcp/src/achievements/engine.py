@@ -1,459 +1,432 @@
-from typing import Dict, Any, List, Optional, Union
-from datetime import datetime
 import logging
-import json
-import os
-from pathlib import Path
 import asyncio
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from typing import List, Dict, Optional, Any, Set
+from datetime import datetime
 
-from .models import Achievement, UserAchievement, AchievementCategory, AchievementTier
+from .models import Achievement, UserAchievement, AchievementCategory, ProgressType
 from .criteria import CriteriaRegistry, register_default_criteria
-from .progress import ProgressTracker
 from .rewards import RewardRegistry, register_default_reward_handlers
+from .progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
 
 class AchievementEngine:
-    def __init__(self, notification_manager=None):
-        self.achievements: Dict[str, Achievement] = {}
-        self.progress_tracker = ProgressTracker()
-        self.notification_manager = notification_manager
-        self.data_dir = Path(os.getenv('DATA_DIR', '.')) / 'achievements'
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize scheduler for periodic checks
-        self.scheduler = AsyncIOScheduler()
-        
-        # Load achievements
-        self._load_achievements()
-        
-        # Register criteria and reward handlers
-        register_default_criteria()
-        register_default_reward_handlers()
-        
-        logger.info("Initialized AchievementEngine")
+    """
+    Core achievement system engine responsible for:
+    - Managing achievement definitions
+    - Tracking user progress
+    - Evaluating achievement criteria
+    - Unlocking achievements
+    - Distributing rewards
+    """
     
+    def __init__(self, notification_manager=None, db_connection=None):
+        """
+        Initialize the achievement engine.
+        
+        Args:
+            notification_manager: Manager for sending notifications
+            db_connection: Database connection for persistence
+        """
+        self.notification_manager = notification_manager
+        self.db_connection = db_connection
+        
+        # Internal state
+        self._achievements: Dict[str, Achievement] = {}
+        self._user_achievements: Dict[str, Dict[str, UserAchievement]] = {}
+        self._criteria_registry = CriteriaRegistry()
+        self._reward_registry = RewardRegistry()
+        self._progress_tracker = ProgressTracker()
+        self._running = False
+        self._task = None
+        self._event_queue = asyncio.Queue()
+        
     async def start(self):
-        """Start the achievement engine"""
-        # Schedule periodic update (daily at midnight)
-        self.scheduler.add_job(
-            self._periodic_update,
-            'cron',
-            hour=0,
-            minute=0,
-            id='achievement_periodic_update'
+        """Start the achievement engine and background processing"""
+        if self._running:
+            return
+            
+        # Register default criteria and rewards
+        register_default_criteria(self._criteria_registry)
+        register_default_reward_handlers(self._reward_registry)
+        
+        # Load achievements from storage
+        await self._load_achievements()
+        
+        # Start background processing
+        self._running = True
+        self._task = asyncio.create_task(self._process_events())
+        
+        logger.info("Achievement engine started successfully")
+        
+    async def stop(self):
+        """Stop the achievement engine and cleanup resources"""
+        if not self._running:
+            return
+            
+        self._running = False
+        if self._task:
+            # Signal task to stop and wait for completion
+            await self._event_queue.put(None)  # Sentinel value
+            await self._task
+            self._task = None
+            
+        logger.info("Achievement engine stopped")
+    
+    async def _process_events(self):
+        """Background task to process achievement events"""
+        while self._running:
+            try:
+                # Get next event with timeout
+                event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
+                
+                # Check for sentinel value indicating shutdown
+                if event is None:
+                    break
+                    
+                # Process the event
+                await self._handle_event(event)
+                self._event_queue.task_done()
+                
+            except asyncio.TimeoutError:
+                # Just a timeout, continue the loop
+                continue
+            except Exception as e:
+                logger.error(f"Error processing achievement event: {str(e)}")
+    
+    async def _handle_event(self, event: Dict[str, Any]):
+        """Process a single achievement event"""
+        event_type = event.get("type")
+        user_id = event.get("user_id")
+        
+        if not user_id:
+            logger.warning(f"Received event without user_id: {event}")
+            return
+            
+        if event_type == "transaction":
+            await self._process_transaction_event(user_id, event)
+        elif event_type == "budget_update":
+            await self._process_budget_event(user_id, event)
+        elif event_type == "system":
+            await self._process_system_event(user_id, event)
+        else:
+            logger.warning(f"Unknown achievement event type: {event_type}")
+    
+    async def _process_transaction_event(self, user_id: str, event: Dict[str, Any]):
+        """Process transaction-related events"""
+        transaction = event.get("data", {})
+        
+        # Check all transaction-related achievements
+        applicable_achievements = [
+            ach for ach in self._achievements.values() 
+            if ach.category in (AchievementCategory.BUDGET, AchievementCategory.SAVING)
+        ]
+        
+        for achievement in applicable_achievements:
+            # Get criteria function
+            criteria_func = self._criteria_registry.get_criteria(achievement.criteria_id)
+            if not criteria_func:
+                continue
+                
+            # Evaluate criteria
+            result = await criteria_func(user_id, transaction, achievement)
+            if result is not None:
+                await self._update_progress(user_id, achievement.id, result)
+    
+    async def _process_budget_event(self, user_id: str, event: Dict[str, Any]):
+        """Process budget-related events"""
+        budget_data = event.get("data", {})
+        
+        # Check all budget-related achievements
+        applicable_achievements = [
+            ach for ach in self._achievements.values() 
+            if ach.category in (AchievementCategory.BUDGET, AchievementCategory.CONSISTENCY)
+        ]
+        
+        for achievement in applicable_achievements:
+            criteria_func = self._criteria_registry.get_criteria(achievement.criteria_id)
+            if not criteria_func:
+                continue
+                
+            result = await criteria_func(user_id, budget_data, achievement)
+            if result is not None:
+                await self._update_progress(user_id, achievement.id, result)
+    
+    async def _process_system_event(self, user_id: str, event: Dict[str, Any]):
+        """Process system-related events"""
+        system_data = event.get("data", {})
+        
+        # Check all system-related achievements
+        applicable_achievements = [
+            ach for ach in self._achievements.values()
+            if ach.category in (AchievementCategory.SYSTEM, AchievementCategory.MILESTONE)
+        ]
+        
+        for achievement in applicable_achievements:
+            criteria_func = self._criteria_registry.get_criteria(achievement.criteria_id)
+            if not criteria_func:
+                continue
+                
+            result = await criteria_func(user_id, system_data, achievement)
+            if result is not None:
+                await self._update_progress(user_id, achievement.id, result)
+    
+    async def _update_progress(self, user_id: str, achievement_id: str, progress_value: float):
+        """Update user progress toward an achievement"""
+        # Get achievement and user achievement
+        achievement = self._achievements.get(achievement_id)
+        if not achievement:
+            logger.warning(f"Attempting to update progress for unknown achievement: {achievement_id}")
+            return
+            
+        # Ensure user exists in tracking
+        if user_id not in self._user_achievements:
+            self._user_achievements[user_id] = {}
+            
+        # Get or create user achievement
+        if achievement_id not in self._user_achievements[user_id]:
+            self._user_achievements[user_id][achievement_id] = UserAchievement(
+                user_id=user_id,
+                achievement_id=achievement_id
+            )
+            
+        user_achievement = self._user_achievements[user_id][achievement_id]
+        
+        # Skip if already unlocked for non-repeatable achievements
+        if user_achievement.unlocked and not self._is_repeatable(achievement):
+            return
+            
+        # Update progress using progress tracker
+        new_value, unlocked = await self._progress_tracker.update_progress(
+            user_achievement=user_achievement,
+            achievement=achievement,
+            new_value=progress_value
         )
         
-        # Start scheduler
-        self.scheduler.start()
-        logger.info("Started AchievementEngine scheduler")
+        # Handle achievement unlocking
+        if unlocked:
+            await self._unlock_achievement(user_id, achievement_id)
+            
+        # Save updated user achievement
+        await self._save_user_achievement(user_achievement)
     
-    async def stop(self):
-        """Stop the achievement engine"""
-        self.scheduler.shutdown()
-        logger.info("Stopped AchievementEngine scheduler")
-    
-    async def register_achievement(self, achievement: Achievement) -> bool:
-        """Register a new achievement"""
-        try:
-            # Validate criteria exists
-            if not CriteriaRegistry.get(achievement.criteria_id):
-                logger.error(f"Cannot register achievement: criteria not found: {achievement.criteria_id}")
-                return False
+    async def _unlock_achievement(self, user_id: str, achievement_id: str):
+        """Handle the unlocking of an achievement"""
+        achievement = self._achievements.get(achievement_id)
+        user_achievement = self._user_achievements.get(user_id, {}).get(achievement_id)
+        
+        if not achievement or not user_achievement:
+            return
             
-            # Store achievement
-            self.achievements[achievement.id] = achievement
+        # Update achievement state
+        user_achievement.unlocked = True
+        if user_achievement.first_achieved_at is None:
+            user_achievement.first_achieved_at = datetime.now()
             
-            # Save to disk
-            self._save_achievements()
-            
-            logger.info(f"Registered achievement: {achievement.name}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error registering achievement: {str(e)}")
-            return False
-    
-    async def process_event(
-        self, 
-        user_id: str, 
-        event_type: str, 
-        event_data: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
-        """
-        Process an event that might trigger achievement progress
-        Returns a list of achievements that were unlocked by this event
-        """
-        try:
-            # Prepare context from event data
-            context = event_data.copy()
-            context['event_type'] = event_type
-            
-            # Track unlocked achievements
-            unlocked_achievements = []
-            
-            # Evaluate all achievements
-            for achievement in self.achievements.values():
-                # Skip hidden achievements for certain event types
-                if achievement.hidden and event_type not in ['system_check', 'periodic_update']:
-                    continue
+        # Update global unlock count
+        achievement.unlocked_count += 1
+        await self._save_achievement(achievement)
+        
+        # Process rewards
+        if achievement.rewards:
+            for reward in achievement.rewards:
+                reward_type = reward.get("type")
+                reward_handler = self._reward_registry.get_handler(reward_type)
                 
-                # Update progress
-                user_achievement = await self.progress_tracker.update_progress(
-                    user_id=user_id,
-                    achievement=achievement,
-                    context=context
-                )
-                
-                if user_achievement and user_achievement.unlocked:
-                    # Check if this was just unlocked (no first_achieved_at previously)
-                    just_unlocked = (
-                        user_achievement.first_achieved_at and 
-                        (datetime.now() - user_achievement.first_achieved_at).total_seconds() < 60
-                    )
-                    
-                    if just_unlocked:
-                        # Process rewards
-                        await RewardRegistry.process_rewards(
-                            user_id=user_id,
-                            achievement=achievement,
-                            user_achievement=user_achievement
-                        )
-                        
-                        # Send notification if available
-                        if self.notification_manager:
-                            await self.notification_manager.send_achievement_notification(
-                                achievement_name=achievement.name,
-                                description=achievement.description
-                            )
-                        
-                        # Add to unlocked list
-                        unlocked_achievements.append({
-                            "id": achievement.id,
-                            "name": achievement.name,
-                            "description": achievement.description,
-                            "tier": achievement.tier,
-                            "category": achievement.category,
-                            "icon": achievement.icon
-                        })
-            
-            # Save achievements
-            self._save_achievements()
-            
-            return unlocked_achievements
-            
-        except Exception as e:
-            logger.error(f"Error processing event: {str(e)}")
-            return []
-    
-    async def get_achievements(
-        self, 
-        category: Optional[AchievementCategory] = None,
-        tier: Optional[AchievementTier] = None,
-        include_hidden: bool = False
-    ) -> List[Achievement]:
-        """Get all registered achievements, optionally filtered"""
-        try:
-            achievements = list(self.achievements.values())
-            
-            # Filter by category
-            if category:
-                achievements = [a for a in achievements if a.category == category]
-            
-            # Filter by tier
-            if tier:
-                achievements = [a for a in achievements if a.tier == tier]
-            
-            # Filter hidden
-            if not include_hidden:
-                achievements = [a for a in achievements if not a.hidden]
-            
-            return achievements
-            
-        except Exception as e:
-            logger.error(f"Error getting achievements: {str(e)}")
-            return []
-    
-    async def get_user_achievement_summary(
-        self, 
-        user_id: str,
-        include_hidden: bool = False
-    ) -> Dict[str, Any]:
-        """Get a summary of a user's achievements"""
-        try:
-            # Get user achievements
-            user_achievements = await self.progress_tracker.get_user_achievements(
+                if reward_handler:
+                    try:
+                        await reward_handler(user_id, achievement, reward)
+                    except Exception as e:
+                        logger.error(f"Error processing reward {reward_type}: {str(e)}")
+        
+        # Send notification if notification manager is available
+        if self.notification_manager:
+            await self.notification_manager.send_achievement_notification(
                 user_id=user_id,
-                include_hidden=include_hidden
+                achievement_name=achievement.name,
+                achievement_description=achievement.description,
+                achievement_tier=achievement.tier
             )
-            
-            # Count by category and tier
-            total_achievements = len(self.achievements)
-            unlocked_count = sum(1 for ua in user_achievements if ua.get('progress', {}).get('unlocked', False))
-            
-            # Get points (if using PointsRewardHandler)
-            points_handler = RewardRegistry.get('points')
-            total_points = 0
-            if points_handler:
-                total_points = await points_handler.get_user_points(user_id)
-            
-            # Get badges (if using BadgeRewardHandler)
-            badge_handler = RewardRegistry.get('badge')
-            badges = []
-            if badge_handler:
-                badges = await badge_handler.get_user_badges(user_id)
-            
-            # Build summary
-            return {
-                "user_id": user_id,
-                "total_achievements": total_achievements,
-                "unlocked_achievements": unlocked_count,
-                "completion_percentage": (unlocked_count / total_achievements * 100) if total_achievements > 0 else 0,
-                "total_points": total_points,
-                "badges": badges,
-                "recent_unlocks": [
-                    {
-                        "id": ua.get('achievement', {}).get('id'),
-                        "name": ua.get('achievement', {}).get('name'),
-                        "unlocked_at": ua.get('progress', {}).get('first_achieved_at')
-                    }
-                    for ua in user_achievements
-                    if ua.get('progress', {}).get('unlocked', False) and ua.get('progress', {}).get('first_achieved_at')
-                ][:5]  # Last 5 unlocked
-            }
-            
-        except Exception as e:
-            logger.error(f"Error getting user achievement summary: {str(e)}")
-            return {"user_id": user_id, "error": str(e)}
     
-    async def _periodic_update(self):
-        """Perform periodic update of achievements (daily)"""
-        try:
-            logger.info("Running periodic achievement update")
+    def _is_repeatable(self, achievement: Achievement) -> bool:
+        """Check if an achievement can be unlocked multiple times"""
+        # For now, consider streak achievements as repeatable
+        return achievement.progress_type == ProgressType.STREAK
+    
+    async def track_event(self, event: Dict[str, Any]):
+        """
+        Track a new event for achievement processing.
+        
+        Args:
+            event: Event data dictionary with type, user_id, and data fields
+        """
+        if not self._running:
+            logger.warning("Achievement engine not running, event ignored")
+            return
             
-            # Get all users with achievement data
-            users = self.progress_tracker.user_achievements.keys()
+        await self._event_queue.put(event)
+    
+    async def get_achievements(self) -> List[Achievement]:
+        """Get all available achievements"""
+        return list(self._achievements.values())
+    
+    async def get_user_achievement_summary(self, user_id: str, include_hidden: bool = False) -> Dict[str, Any]:
+        """
+        Get achievement summary for a specific user.
+        
+        Args:
+            user_id: The user ID to get achievements for
+            include_hidden: Whether to include hidden achievements
             
-            # Process system check event for each user
-            for user_id in users:
-                # Create context with daily flags
-                context = {
-                    "periodic_update": True,
-                    "current_period": datetime.now().strftime("%Y-%m"),
-                    "last_checked_period": (datetime.now().replace(day=1) - datetime.timedelta(days=1)).strftime("%Y-%m")
-                }
+        Returns:
+            Dictionary with achievement summary
+        """
+        user_achs = self._user_achievements.get(user_id, {})
+        
+        # Filter achievements
+        visible_achievements = {}
+        for ach_id, achievement in self._achievements.items():
+            # Skip hidden achievements unless requested
+            if achievement.hidden and not include_hidden:
+                continue
                 
-                await self.process_event(
-                    user_id=user_id,
-                    event_type="periodic_update",
-                    event_data=context
-                )
+            # Include if unlocked or not hidden
+            if not achievement.hidden or ach_id in user_achs:
+                visible_achievements[ach_id] = achievement
+        
+        # Build achievement data
+        achievement_data = []
+        unlocked_count = 0
+        
+        for ach_id, achievement in visible_achievements.items():
+            user_ach = user_achs.get(ach_id)
             
-            logger.info("Completed periodic achievement update")
+            if user_ach and user_ach.unlocked:
+                unlocked_count += 1
+                
+            # Calculate progress percentage
+            progress_pct = 0
+            if user_ach:
+                if achievement.target_value > 0:
+                    progress_pct = min(100, (user_ach.current_value / achievement.target_value) * 100)
+                elif user_ach.unlocked:
+                    progress_pct = 100
             
-        except Exception as e:
-            logger.error(f"Error in periodic achievement update: {str(e)}")
+            achievement_data.append({
+                "id": achievement.id,
+                "name": achievement.name,
+                "description": achievement.description,
+                "category": achievement.category,
+                "tier": achievement.tier,
+                "icon": achievement.icon,
+                "unlocked": user_ach.unlocked if user_ach else False,
+                "progress_value": user_ach.current_value if user_ach else 0,
+                "progress_percentage": progress_pct,
+                "target_value": achievement.target_value,
+                "unlocked_date": user_ach.first_achieved_at if user_ach and user_ach.unlocked else None
+            })
+        
+        # Calculate completion percentage
+        total_count = len(visible_achievements)
+        completion_percentage = (unlocked_count / total_count * 100) if total_count > 0 else 0
+        
+        return {
+            "user_id": user_id,
+            "total_achievements": total_count,
+            "unlocked_achievements": unlocked_count,
+            "completion_percentage": completion_percentage,
+            "achievements": achievement_data
+        }
     
-    def _save_achievements(self):
-        """Save achievements to disk"""
-        try:
-            # Create serializable structure
-            data = {
-                ach_id: ach.dict() for ach_id, ach in self.achievements.items()
-            }
-            
-            # Save to file
-            file_path = self.data_dir / 'achievements.json'
-            with open(file_path, 'w') as f:
-                json.dump(data, f, default=str)
-            
-            logger.debug("Saved achievements")
-            
-        except Exception as e:
-            logger.error(f"Error saving achievements: {str(e)}")
-    
-    def _load_achievements(self):
-        """Load achievements from disk"""
-        try:
-            file_path = self.data_dir / 'achievements.json'
-            if not file_path.exists():
-                self._create_default_achievements()
-                return
-            
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-            
-            # Convert to Achievement objects
-            for ach_id, ach_data in data.items():
-                try:
-                    self.achievements[ach_id] = Achievement(**ach_data)
-                except Exception as e:
-                    logger.error(f"Error parsing achievement data: {str(e)}")
-            
-            logger.info(f"Loaded {len(self.achievements)} achievements")
-            
-        except Exception as e:
-            logger.error(f"Error loading achievements: {str(e)}")
-            self._create_default_achievements()
-    
-    def _create_default_achievements(self):
-        """Create default achievements"""
-        try:
-            # Budget achievements
-            self.achievements["budget_master_bronze"] = Achievement(
-                id="budget_master_bronze",
-                name="Budget Novice",
-                description="Stay under budget in all categories for 1 month",
+    async def _load_achievements(self):
+        """Load achievements from storage"""
+        # In a real implementation, this would load from database
+        # For now, load from predefined list
+        
+        # Example achievements
+        sample_achievements = [
+            Achievement(
+                name="Budget Beginner",
+                description="Create your first budget",
                 category=AchievementCategory.BUDGET,
-                tier=AchievementTier.BRONZE,
-                icon="budget_bronze.png",
-                criteria_id="budget_streak_1",
-                progress_type="streak",
+                tier=AchievementCategory.BRONZE,
+                icon="budget_beginner.png",
+                criteria_id="first_budget_created",
+                progress_type=ProgressType.BOOLEAN,
                 target_value=1,
+                rewards=[{"type": "badge", "value": "budget_beginner"}]
+            ),
+            Achievement(
+                name="Saving Star",
+                description="Save more than 20% of your income in a month",
+                category=AchievementCategory.SAVING,
+                tier=AchievementCategory.SILVER,
+                icon="saving_star.png",
+                criteria_id="monthly_saving_percentage",
+                progress_type=ProgressType.PERCENTAGE,
+                target_value=20,
                 rewards=[
-                    {"type": "badge", "value": "budget_novice"},
+                    {"type": "badge", "value": "saving_star"},
                     {"type": "points", "value": 100}
                 ]
-            )
-            
-            self.achievements["budget_master_silver"] = Achievement(
-                id="budget_master_silver",
-                name="Budget Apprentice",
-                description="Stay under budget in all categories for 3 consecutive months",
-                category=AchievementCategory.BUDGET,
-                tier=AchievementTier.SILVER,
-                icon="budget_silver.png",
-                criteria_id="budget_streak_3",
-                progress_type="streak",
+            ),
+            Achievement(
+                name="Consistency King",
+                description="Stay under budget for 3 months in a row",
+                category=AchievementCategory.CONSISTENCY,
+                tier=AchievementCategory.GOLD,
+                icon="consistency_king.png",
+                criteria_id="budget_streak",
+                progress_type=ProgressType.STREAK,
                 target_value=3,
                 rewards=[
-                    {"type": "badge", "value": "budget_apprentice"},
+                    {"type": "badge", "value": "consistency_king"},
                     {"type": "points", "value": 250}
                 ]
-            )
-            
-            self.achievements["budget_master_gold"] = Achievement(
-                id="budget_master_gold",
-                name="Budget Master",
-                description="Stay under budget in all categories for 6 consecutive months",
-                category=AchievementCategory.BUDGET,
-                tier=AchievementTier.GOLD,
-                icon="budget_gold.png",
-                criteria_id="budget_streak_6",
-                progress_type="streak",
-                target_value=6,
+            ),
+            Achievement(
+                name="Setup Superstar",
+                description="Set up all account connections and preferences",
+                category=AchievementCategory.SYSTEM,
+                tier=AchievementCategory.BRONZE,
+                icon="setup_superstar.png",
+                criteria_id="account_setup_complete",
+                progress_type=ProgressType.COUNTER,
+                target_value=5,  # 5 setup tasks to complete
+                rewards=[{"type": "badge", "value": "setup_superstar"}]
+            ),
+            Achievement(
+                name="First Milestone",
+                description="Reach your first savings goal",
+                category=AchievementCategory.MILESTONE,
+                tier=AchievementCategory.SILVER,
+                icon="first_milestone.png",
+                criteria_id="reached_savings_goal",
+                progress_type=ProgressType.BOOLEAN,
+                target_value=1,
                 rewards=[
-                    {"type": "badge", "value": "budget_master"},
-                    {"type": "points", "value": 500},
-                    {"type": "feature", "value": "advanced_reporting"}
-                ]
-            )
-            
-            # Savings achievements
-            self.achievements["savings_bronze"] = Achievement(
-                id="savings_bronze",
-                name="Savings Starter",
-                description="Save your first $1,000",
-                category=AchievementCategory.SAVING,
-                tier=AchievementTier.BRONZE,
-                icon="savings_bronze.png",
-                criteria_id="savings_goal_1000",
-                progress_type="percentage",
-                target_value=100,
-                rewards=[
-                    {"type": "badge", "value": "saver_starter"},
+                    {"type": "badge", "value": "milestone_master"},
                     {"type": "points", "value": 150}
                 ]
-            )
+            ),
+        ]
+        
+        # Add to internal dictionary
+        for achievement in sample_achievements:
+            self._achievements[achievement.id] = achievement
+    
+    async def _save_achievement(self, achievement: Achievement):
+        """Save achievement to storage"""
+        # In a real implementation, this would save to database
+        self._achievements[achievement.id] = achievement
+    
+    async def _save_user_achievement(self, user_achievement: UserAchievement):
+        """Save user achievement to storage"""
+        # In a real implementation, this would save to database
+        user_id = user_achievement.user_id
+        ach_id = user_achievement.achievement_id
+        
+        if user_id not in self._user_achievements:
+            self._user_achievements[user_id] = {}
             
-            self.achievements["savings_silver"] = Achievement(
-                id="savings_silver",
-                name="Savings Builder",
-                description="Save $5,000",
-                category=AchievementCategory.SAVING,
-                tier=AchievementTier.SILVER,
-                icon="savings_silver.png",
-                criteria_id="savings_goal_5000",
-                progress_type="percentage",
-                target_value=100,
-                rewards=[
-                    {"type": "badge", "value": "saver_builder"},
-                    {"type": "points", "value": 300}
-                ]
-            )
-            
-            self.achievements["savings_gold"] = Achievement(
-                id="savings_gold",
-                name="Savings Expert",
-                description="Save $10,000",
-                category=AchievementCategory.SAVING,
-                tier=AchievementTier.GOLD,
-                icon="savings_gold.png",
-                criteria_id="savings_goal_10000",
-                progress_type="percentage",
-                target_value=100,
-                rewards=[
-                    {"type": "badge", "value": "saver_expert"},
-                    {"type": "points", "value": 600},
-                    {"type": "feature", "value": "investment_tracking"}
-                ]
-            )
-            
-            # Milestone achievements
-            self.achievements["transaction_bronze"] = Achievement(
-                id="transaction_bronze",
-                name="Transaction Tracker",
-                description="Track 10 transactions",
-                category=AchievementCategory.MILESTONE,
-                tier=AchievementTier.BRONZE,
-                icon="transaction_bronze.png",
-                criteria_id="transaction_count_10",
-                progress_type="counter",
-                target_value=10,
-                rewards=[
-                    {"type": "badge", "value": "transaction_tracker"},
-                    {"type": "points", "value": 50}
-                ]
-            )
-            
-            self.achievements["transaction_silver"] = Achievement(
-                id="transaction_silver",
-                name="Transaction Manager",
-                description="Track 100 transactions",
-                category=AchievementCategory.MILESTONE,
-                tier=AchievementTier.SILVER,
-                icon="transaction_silver.png",
-                criteria_id="transaction_count_100",
-                progress_type="counter",
-                target_value=100,
-                rewards=[
-                    {"type": "badge", "value": "transaction_manager"},
-                    {"type": "points", "value": 200}
-                ]
-            )
-            
-            self.achievements["transaction_gold"] = Achievement(
-                id="transaction_gold",
-                name="Transaction Master",
-                description="Track 1,000 transactions",
-                category=AchievementCategory.MILESTONE,
-                tier=AchievementTier.GOLD,
-                icon="transaction_gold.png",
-                criteria_id="transaction_count_1000",
-                progress_type="counter",
-                target_value=1000,
-                rewards=[
-                    {"type": "badge", "value": "transaction_master"},
-                    {"type": "points", "value": 500},
-                    {"type": "feature", "value": "spending_insights"}
-                ]
-            )
-            
-            # Save default achievements
-            self._save_achievements()
-            
-            logger.info(f"Created {len(self.achievements)} default achievements")
-            
-        except Exception as e:
-            logger.error(f"Error creating default achievements: {str(e)}")
+        self._user_achievements[user_id][ach_id] = user_achievement

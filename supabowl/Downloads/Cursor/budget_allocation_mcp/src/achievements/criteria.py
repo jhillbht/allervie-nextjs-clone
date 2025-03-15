@@ -1,282 +1,147 @@
-from typing import Dict, Any, List, Optional, Callable, Union
-from datetime import datetime, timedelta
 import logging
-from abc import ABC, abstractmethod
+from typing import Dict, Callable, Any, Optional, Awaitable
 
-from .models import ProgressType, AchievementCategory
+from .models import Achievement
 
 logger = logging.getLogger(__name__)
 
-class AchievementCriteria(ABC):
-    def __init__(self, 
-                 criteria_id: str, 
-                 name: str, 
-                 description: str,
-                 progress_type: ProgressType,
-                 category: AchievementCategory):
-        self.id = criteria_id
-        self.name = name
-        self.description = description
-        self.progress_type = progress_type
-        self.category = category
-    
-    @abstractmethod
-    async def evaluate(self, user_id: str, context: Dict[str, Any]) -> float:
-        """
-        Evaluate if the criteria is met based on the provided context
-        Returns the current progress value (e.g., count, percentage, etc.)
-        """
-        pass
+# Type definition for criteria functions
+CriteriaFunc = Callable[[str, Dict[str, Any], Achievement], Awaitable[Optional[float]]]
 
-    @abstractmethod
-    async def reset_progress(self, user_id: str) -> bool:
-        """Reset progress for a specific user for this criteria"""
-        pass
-
-
-class BudgetCriteria(AchievementCriteria):
-    """Base class for budget-related achievement criteria"""
-    def __init__(self, criteria_id: str, name: str, description: str, 
-                 progress_type: ProgressType):
-        super().__init__(
-            criteria_id=criteria_id,
-            name=name, 
-            description=description,
-            progress_type=progress_type,
-            category=AchievementCategory.BUDGET
-        )
-
-
-class BudgetCompletionCriteria(BudgetCriteria):
-    """Achievement criteria for staying under budget"""
-    def __init__(self, budget_categories: Optional[List[str]] = None):
-        super().__init__(
-            criteria_id="budget_completion",
-            name="Budget Completion",
-            description="Stay under budget for specified categories",
-            progress_type=ProgressType.PERCENTAGE
-        )
-        self.budget_categories = budget_categories
-    
-    async def evaluate(self, user_id: str, context: Dict[str, Any]) -> float:
-        try:
-            # Extract budgets and transactions from context
-            budgets = context.get('budgets', {})
-            
-            if not budgets:
-                return 0.0
-            
-            # Filter categories if specified
-            if self.budget_categories:
-                budgets = {k: v for k, v in budgets.items() if k in self.budget_categories}
-            
-            # Count budgets that are under limit
-            under_budget_count = sum(1 for budget in budgets.values() 
-                                    if budget.current_spending <= budget.amount)
-            
-            # Calculate percentage
-            if len(budgets) > 0:
-                return under_budget_count / len(budgets) * 100
-            return 0.0
-            
-        except Exception as e:
-            logger.error(f"Error evaluating budget completion criteria: {str(e)}")
-            return 0.0
-    
-    async def reset_progress(self, user_id: str) -> bool:
-        # For percentage-based criteria, no persistent storage needed
-        return True
-
-
-class BudgetStreakCriteria(BudgetCriteria):
-    """Achievement criteria for maintaining a streak of staying under budget"""
-    def __init__(self, required_streak: int = 3, 
-                budget_categories: Optional[List[str]] = None):
-        super().__init__(
-            criteria_id=f"budget_streak_{required_streak}",
-            name=f"Budget Streak ({required_streak})",
-            description=f"Stay under budget for {required_streak} consecutive periods",
-            progress_type=ProgressType.STREAK
-        )
-        self.required_streak = required_streak
-        self.budget_categories = budget_categories
-        self.user_streaks: Dict[str, int] = {}
-    
-    async def evaluate(self, user_id: str, context: Dict[str, Any]) -> float:
-        try:
-            # Extract budgets and period info from context
-            budgets = context.get('budgets', {})
-            current_period = context.get('current_period')
-            last_checked_period = context.get('last_checked_period')
-            
-            if not budgets or not current_period:
-                return float(self.user_streaks.get(user_id, 0))
-            
-            # Ensure we're only evaluating once per period
-            if last_checked_period == current_period:
-                return float(self.user_streaks.get(user_id, 0))
-            
-            # Filter categories if specified
-            if self.budget_categories:
-                budgets = {k: v for k, v in budgets.items() if k in self.budget_categories}
-            
-            # Check if all budgets are under limit
-            all_under_budget = all(budget.current_spending <= budget.amount 
-                                  for budget in budgets.values())
-            
-            # Update streak
-            if all_under_budget:
-                self.user_streaks[user_id] = self.user_streaks.get(user_id, 0) + 1
-            else:
-                # Reset streak if any budget is over
-                self.user_streaks[user_id] = 0
-            
-            return float(self.user_streaks.get(user_id, 0))
-            
-        except Exception as e:
-            logger.error(f"Error evaluating budget streak criteria: {str(e)}")
-            return float(self.user_streaks.get(user_id, 0))
-    
-    async def reset_progress(self, user_id: str) -> bool:
-        try:
-            if user_id in self.user_streaks:
-                self.user_streaks[user_id] = 0
-            return True
-        except Exception as e:
-            logger.error(f"Error resetting budget streak: {str(e)}")
-            return False
-
-
-class SavingsCriteria(AchievementCriteria):
-    """Base class for savings-related achievement criteria"""
-    def __init__(self, criteria_id: str, name: str, description: str, 
-                 progress_type: ProgressType):
-        super().__init__(
-            criteria_id=criteria_id,
-            name=name, 
-            description=description,
-            progress_type=progress_type,
-            category=AchievementCategory.SAVING
-        )
-
-
-class SavingsGoalCriteria(SavingsCriteria):
-    """Achievement criteria for reaching savings goals"""
-    def __init__(self, target_amount: float):
-        super().__init__(
-            criteria_id=f"savings_goal_{int(target_amount)}",
-            name=f"Savings Goal (${target_amount})",
-            description=f"Save a total of ${target_amount}",
-            progress_type=ProgressType.PERCENTAGE
-        )
-        self.target_amount = target_amount
-    
-    async def evaluate(self, user_id: str, context: Dict[str, Any]) -> float:
-        try:
-            # Extract savings data from context
-            total_savings = context.get('total_savings', 0.0)
-            
-            # Calculate percentage of goal achieved
-            percentage = min(100.0, (total_savings / self.target_amount) * 100)
-            return percentage
-            
-        except Exception as e:
-            logger.error(f"Error evaluating savings goal criteria: {str(e)}")
-            return 0.0
-    
-    async def reset_progress(self, user_id: str) -> bool:
-        # For savings goals, progress is directly tied to account balances
-        # No need to reset anything in the criteria itself
-        return True
-
-
-class MilestoneCriteria(AchievementCriteria):
-    """Base class for milestone-related achievement criteria"""
-    def __init__(self, criteria_id: str, name: str, description: str, 
-                 progress_type: ProgressType):
-        super().__init__(
-            criteria_id=criteria_id,
-            name=name, 
-            description=description,
-            progress_type=progress_type,
-            category=AchievementCategory.MILESTONE
-        )
-
-
-class TransactionCountCriteria(MilestoneCriteria):
-    """Achievement criteria for reaching a certain number of tracked transactions"""
-    def __init__(self, target_count: int):
-        super().__init__(
-            criteria_id=f"transaction_count_{target_count}",
-            name=f"Transaction Milestone ({target_count})",
-            description=f"Track {target_count} transactions in the system",
-            progress_type=ProgressType.COUNTER
-        )
-        self.target_count = target_count
-    
-    async def evaluate(self, user_id: str, context: Dict[str, Any]) -> float:
-        try:
-            # Extract transaction data from context
-            transactions = context.get('transactions', [])
-            
-            # Return current count
-            return float(len(transactions))
-            
-        except Exception as e:
-            logger.error(f"Error evaluating transaction count criteria: {str(e)}")
-            return 0.0
-    
-    async def reset_progress(self, user_id: str) -> bool:
-        # Cannot reset transaction count as it's based on historical data
-        return False
-
-
-# Criteria Registry for easy lookups
 class CriteriaRegistry:
-    _criteria: Dict[str, AchievementCriteria] = {}
+    """
+    Registry for achievement criteria evaluation functions.
+    Each criteria function takes (user_id, event_data, achievement) and returns
+    a progress value or None if no progress update is needed.
+    """
     
-    @classmethod
-    def register(cls, criteria: AchievementCriteria) -> None:
-        """Register a criteria instance"""
-        cls._criteria[criteria.id] = criteria
-        logger.info(f"Registered achievement criteria: {criteria.id}")
-    
-    @classmethod
-    def get(cls, criteria_id: str) -> Optional[AchievementCriteria]:
-        """Get a criteria by ID"""
-        return cls._criteria.get(criteria_id)
-    
-    @classmethod
-    def get_all(cls) -> List[AchievementCriteria]:
-        """Get all registered criteria"""
-        return list(cls._criteria.values())
-    
-    @classmethod
-    def get_by_category(cls, category: AchievementCategory) -> List[AchievementCriteria]:
-        """Get all criteria for a specific category"""
-        return [
-            criteria for criteria in cls._criteria.values()
-            if criteria.category == category
-        ]
+    def __init__(self):
+        self._criteria: Dict[str, CriteriaFunc] = {}
+        
+    def register(self, criteria_id: str, func: CriteriaFunc):
+        """Register a criteria evaluation function"""
+        self._criteria[criteria_id] = func
+        logger.debug(f"Registered criteria: {criteria_id}")
+        
+    def get_criteria(self, criteria_id: str) -> Optional[CriteriaFunc]:
+        """Get a criteria function by ID"""
+        return self._criteria.get(criteria_id)
+        
+    def list_criteria(self):
+        """List all registered criteria IDs"""
+        return list(self._criteria.keys())
 
 
-# Register default criteria
-def register_default_criteria():
-    """Register default achievement criteria"""
-    # Budget criteria
-    CriteriaRegistry.register(BudgetCompletionCriteria())
-    CriteriaRegistry.register(BudgetStreakCriteria(required_streak=3))
-    CriteriaRegistry.register(BudgetStreakCriteria(required_streak=6))
-    CriteriaRegistry.register(BudgetStreakCriteria(required_streak=12))
+# Default criteria implementation functions
+
+async def first_budget_created(user_id: str, data: Dict[str, Any], achievement: Achievement) -> Optional[float]:
+    """Criteria for first budget creation"""
+    event_type = data.get("event_type")
     
-    # Savings criteria
-    CriteriaRegistry.register(SavingsGoalCriteria(target_amount=1000))
-    CriteriaRegistry.register(SavingsGoalCriteria(target_amount=5000))
-    CriteriaRegistry.register(SavingsGoalCriteria(target_amount=10000))
+    if event_type == "budget_created":
+        # This is a boolean achievement, so return 1.0 for completion
+        return 1.0
     
-    # Milestone criteria
-    CriteriaRegistry.register(TransactionCountCriteria(target_count=10))
-    CriteriaRegistry.register(TransactionCountCriteria(target_count=100))
-    CriteriaRegistry.register(TransactionCountCriteria(target_count=1000))
+    return None
+
+async def monthly_saving_percentage(user_id: str, data: Dict[str, Any], achievement: Achievement) -> Optional[float]:
+    """Criteria for saving percentage of income"""
+    if data.get("event_type") != "month_summary":
+        return None
+        
+    income = data.get("total_income", 0)
+    savings = data.get("total_savings", 0)
     
-    logger.info("Registered default achievement criteria")
+    if income <= 0:
+        return None
+        
+    # Calculate saving percentage
+    saving_percentage = (savings / income) * 100
+    
+    # Return the actual percentage as progress
+    return saving_percentage
+
+async def budget_streak(user_id: str, data: Dict[str, Any], achievement: Achievement) -> Optional[float]:
+    """Criteria for consecutive months under budget"""
+    if data.get("event_type") != "month_summary":
+        return None
+        
+    # Check if under budget
+    under_budget = data.get("under_budget", False)
+    current_streak = data.get("budget_streak", 0)
+    
+    if under_budget:
+        # Increment streak
+        return current_streak + 1
+    else:
+        # Reset streak
+        return 0
+
+async def account_setup_complete(user_id: str, data: Dict[str, Any], achievement: Achievement) -> Optional[float]:
+    """Criteria for completing account setup steps"""
+    if data.get("event_type") != "setup_action":
+        return None
+        
+    action_type = data.get("action_type")
+    valid_actions = {
+        "connect_bank", "setup_profile", "create_budget",
+        "set_goals", "enable_notifications"
+    }
+    
+    if action_type in valid_actions:
+        # Get current progress from data or default to 0
+        current_progress = data.get("completed_actions", 0)
+        return current_progress + 1
+        
+    return None
+
+async def reached_savings_goal(user_id: str, data: Dict[str, Any], achievement: Achievement) -> Optional[float]:
+    """Criteria for reaching a savings goal"""
+    if data.get("event_type") != "goal_reached":
+        return None
+        
+    goal_type = data.get("goal_type")
+    
+    if goal_type == "savings":
+        # Boolean achievement - return 1.0 for completion
+        return 1.0
+        
+    return None
+
+async def transaction_count(user_id: str, data: Dict[str, Any], achievement: Achievement) -> Optional[float]:
+    """Criteria for tracking number of transactions"""
+    if data.get("event_type") != "transaction_stats":
+        return None
+        
+    # Return the total transaction count
+    return data.get("transaction_count", 0)
+
+async def expense_reduction(user_id: str, data: Dict[str, Any], achievement: Achievement) -> Optional[float]:
+    """Criteria for reducing expenses in a category"""
+    if data.get("event_type") != "expense_comparison":
+        return None
+        
+    # Get percentage reduction
+    reduction = data.get("reduction_percentage", 0)
+    return reduction if reduction > 0 else 0
+
+async def consecutive_logins(user_id: str, data: Dict[str, Any], achievement: Achievement) -> Optional[float]:
+    """Criteria for tracking consecutive daily logins"""
+    if data.get("event_type") != "user_login":
+        return None
+        
+    # Get the current streak
+    streak = data.get("login_streak", 0)
+    return streak
+
+
+def register_default_criteria(registry: CriteriaRegistry):
+    """Register all default criteria functions"""
+    registry.register("first_budget_created", first_budget_created)
+    registry.register("monthly_saving_percentage", monthly_saving_percentage)
+    registry.register("budget_streak", budget_streak)
+    registry.register("account_setup_complete", account_setup_complete)
+    registry.register("reached_savings_goal", reached_savings_goal)
+    registry.register("transaction_count", transaction_count)
+    registry.register("expense_reduction", expense_reduction)
+    registry.register("consecutive_logins", consecutive_logins)
