@@ -47,5 +47,5 @@ services:
         type: SECRET
         scope: RUN_TIME
       - key: CLIENT_CUSTOMER_ID
-        value: 8127539892
+        value: "8127539892"
         scope: RUN_TIME
