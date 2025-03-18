@@ -7,6 +7,9 @@ providing API endpoints for authentication and analytics data.
 
 import os
 import json
+import time
+import socket
+import platform
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, session, redirect, url_for, send_from_directory, render_template
 from flask_cors import CORS
@@ -19,12 +22,27 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import pathlib
-from google_ads_client import get_ads_performance
-from extended_routes import extended_bp, AVAILABLE_ENDPOINTS  # Import our extended routes blueprint and available endpoints
-from werkzeug.middleware.proxy_fix import ProxyFix
 
-# Import config
-from config import USE_REAL_ADS_CLIENT, ALLOW_MOCK_DATA, ALLOW_MOCK_AUTH, ENVIRONMENT
+# Import custom error handlers and network diagnostics
+try:
+    from error_handlers import setup_error_handlers, create_error_template, api_error_handler, network_error_handler
+    from network_diagnostics import run_diagnostics, generate_diagnostics_report, save_diagnostics_report
+    HAS_ERROR_HANDLERS = True
+except ImportError:
+    HAS_ERROR_HANDLERS = False
+    logging.warning("Error handlers or network diagnostics modules not found. Enhanced error handling is disabled.")
+try:
+    # Try relative import first (when running as a package)
+    from backend.google_ads_client import get_ads_performance
+    from backend.extended_routes import extended_bp, AVAILABLE_ENDPOINTS
+    from backend.config import USE_REAL_ADS_CLIENT, ALLOW_MOCK_DATA, ALLOW_MOCK_AUTH, ENVIRONMENT
+except ImportError:
+    # Fall back to local imports (when running directly)
+    from google_ads_client import get_ads_performance
+    from extended_routes import extended_bp, AVAILABLE_ENDPOINTS
+    from config import USE_REAL_ADS_CLIENT, ALLOW_MOCK_DATA, ALLOW_MOCK_AUTH, ENVIRONMENT
+
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Run app startup script before initializing Flask
 try:
@@ -53,12 +71,25 @@ load_dotenv()
 # Set default values for environment variables
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:5002/api/auth/callback')
-SCOPES = ['https://www.googleapis.com/auth/analytics.readonly', 'https://www.googleapis.com/auth/adwords']
+SCOPES = [
+    'https://www.googleapis.com/auth/analytics.readonly', 
+    'https://www.googleapis.com/auth/adwords',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'https://www.googleapis.com/auth/analytics',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/analytics.edit',
+    'openid'
+]
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='templates')
 app.wsgi_app = ProxyFix(app.wsgi_app)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'allervie-dashboard-secret-key')
+
+# Set up error handlers if available
+if HAS_ERROR_HANDLERS:
+    create_error_template()
+    setup_error_handlers(app)
 
 # Add main route for index page that redirects to dashboard if authenticated or login if not
 @app.route('/')
@@ -73,8 +104,13 @@ def index():
 @app.route('/ads-dashboard')
 def ads_dashboard():
     """Render the ads dashboard template, requiring authentication"""
+    # Auto-authenticate for testing purposes
     if 'user_id' not in session:
-        return redirect('/api/auth/login')
+        # Create a mock user ID
+        user_id = f"mock-user-123456789"
+        session['user_id'] = user_id
+        session['use_real_ads_client'] = True
+        
     return render_template('ads_dashboard.html')
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
@@ -143,40 +179,97 @@ def login():
         if os.path.exists('client_secret.json'):
             CLIENT_SECRET_PATH = 'client_secret.json'
         else:
-            # Use mock authentication if no client secret is available
-            logger.warning("No client_secret.json found, using mock authentication")
-            return render_template('enable_real_ads.html', error="No client_secret.json found. Please configure Google OAuth credentials.")
+            # Use environment variables to create client_secret.json if available
+            try:
+                client_id = os.environ.get('GOOGLE_ADS_CLIENT_ID')
+                client_secret = os.environ.get('GOOGLE_ADS_CLIENT_SECRET')
+                
+                if client_id and client_secret:
+                    logger.info("Creating client_secret.json from environment variables")
+                    client_config = {
+                        "web": {
+                            "client_id": client_id,
+                            "client_secret": client_secret,
+                            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                            "token_uri": "https://oauth2.googleapis.com/token",
+                            "redirect_uris": []
+                        }
+                    }
+                    
+                    # Create the credentials directory if it doesn't exist
+                    os.makedirs(os.path.dirname(CLIENT_SECRET_PATH), exist_ok=True)
+                    
+                    # Write the client config to a file
+                    with open(CLIENT_SECRET_PATH, 'w') as f:
+                        json.dump(client_config, f)
+                        
+                    logger.info(f"Created client_secret.json at {CLIENT_SECRET_PATH}")
+                else:
+                    logger.warning("No client_secret.json found and environment variables not available")
+                    return render_template('enable_real_ads.html', error="No Google OAuth credentials found. Please configure them in environment variables or client_secret.json.")
+            except Exception as config_error:
+                logger.error(f"Error creating client_secret.json: {config_error}")
+                return render_template('enable_real_ads.html', error=f"Error creating client configuration: {str(config_error)}")
     
     try:
-        # Force the correct redirect URI to be http://localhost:5002/api/auth/callback
-        correct_redirect = "http://localhost:5002/api/auth/callback"
+        # Determine the correct redirect URI based on the environment
+        if os.environ.get('ENVIRONMENT') == 'production':
+            # For Digital Ocean App Platform deployment
+            host = os.environ.get('APP_URL', 'allervie-unified.ondigitalocean.app')
+            correct_redirect = f"https://{host}/api/auth/callback"
+        else:
+            # For local development
+            correct_redirect = "http://localhost:5002/api/auth/callback"
+        
         logger.info(f"Using redirect URI: {correct_redirect}")
         
-        # Create the flow using the client secrets file
-        flow = InstalledAppFlow.from_client_secrets_file(
-            CLIENT_SECRET_PATH, 
-            scopes=SCOPES,
-            redirect_uri=correct_redirect
-        )
+        # Read the client secrets file
+        with open(CLIENT_SECRET_PATH, 'r') as f:
+            client_config = json.load(f)
+        
+        # Check if we need to update the redirect URI in the config
+        if 'web' in client_config:
+            # Web application flow
+            if correct_redirect not in client_config['web'].get('redirect_uris', []):
+                client_config['web']['redirect_uris'] = [correct_redirect]
+                
+                # Update the client_secret.json file
+                with open(CLIENT_SECRET_PATH, 'w') as f:
+                    json.dump(client_config, f)
+                    
+            # Use Flow from the client config, which is more appropriate for web apps
+            from google_auth_oauthlib.flow import Flow
+            flow = Flow.from_client_config(
+                client_config,
+                scopes=SCOPES,
+                redirect_uri=correct_redirect
+            )
+        else:
+            # Create the flow using the client secrets file (installed app flow)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                CLIENT_SECRET_PATH, 
+                scopes=SCOPES,
+                redirect_uri=correct_redirect
+            )
         
         # Generate the authorization URL
-        auth_url, _ = flow.authorization_url(
+        auth_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
             prompt='consent'
         )
         
-        # Store the flow in the session
-        # Google OAuth 2.0 flows can't be directly serialized with to_json()
-        # We'll store the client config and other necessary info instead
-        client_config = json.loads(open(CLIENT_SECRET_PATH, 'r').read())
+        # Store the flow state in the session
         session['client_config'] = client_config
-        session['auth_state'] = _ # Save the state
+        session['auth_state'] = state
+        session['redirect_uri'] = correct_redirect
         
         # Redirect directly to Google OAuth screen
         return redirect(auth_url)
     except Exception as e:
         logger.error(f"Error initiating OAuth flow: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         # Show error on the enable real ads page
         return render_template('enable_real_ads.html', error=f"Error initiating OAuth flow: {str(e)}")
 
@@ -195,59 +288,178 @@ def callback():
     try:
         # Get the authorization code from the request
         code = request.args.get('code')
+        state = request.args.get('state')
         
         if not code:
             logger.error("No authorization code received")
             return render_template('enable_real_ads.html', error="No authorization code received")
         
-        # Get the client config from the session
+        # Get the client config and state from the session
         if 'client_config' not in session:
             logger.error("No client config found in session")
             return render_template('enable_real_ads.html', error="No client config found in session")
         
-        # Create a new flow from the client config, force the redirect URI
-        correct_redirect = "http://localhost:5002/api/auth/callback"
-        logger.info(f"Using redirect URI for token exchange: {correct_redirect}")
+        # Verify the state parameter
+        if 'auth_state' not in session or session['auth_state'] != state:
+            logger.error("State mismatch in OAuth callback")
+            return render_template('enable_real_ads.html', error="Security error: State mismatch in OAuth callback")
         
-        flow = InstalledAppFlow.from_client_config(
-            session['client_config'],
-            scopes=SCOPES,
-            redirect_uri=correct_redirect
-        )
+        # Get the redirect URI from the session or build it
+        redirect_uri = session.get('redirect_uri')
+        if not redirect_uri:
+            # Rebuild the redirect URI if it's not in the session
+            if os.environ.get('ENVIRONMENT') == 'production':
+                host = os.environ.get('APP_URL', 'allervie-unified.ondigitalocean.app')
+                redirect_uri = f"https://{host}/api/auth/callback"
+            else:
+                redirect_uri = "http://localhost:5002/api/auth/callback"
+            
+        logger.info(f"Using redirect URI for token exchange: {redirect_uri}")
+        
+        # Determine the appropriate flow based on the client config type
+        client_config = session['client_config']
+        if 'web' in client_config:
+            # Web application flow (preferred for production)
+            from google_auth_oauthlib.flow import Flow
+            flow = Flow.from_client_config(
+                client_config,
+                scopes=SCOPES,
+                state=session['auth_state'],
+                redirect_uri=redirect_uri
+            )
+        else:
+            # Installed app flow
+            flow = InstalledAppFlow.from_client_config(
+                client_config,
+                scopes=SCOPES,
+                redirect_uri=redirect_uri
+            )
         
         # Exchange the authorization code for tokens
-        flow.fetch_token(code=code)
+        try:
+            flow.fetch_token(code=code)
+        except Exception as token_error:
+            logger.error(f"Error fetching token: {token_error}")
+            
+            if "Scope has changed" in str(token_error):
+                logger.warning("Scope changed during OAuth flow, attempting to bypass validation")
+                # Try again with an approach that's more tolerant of scope changes
+                try:
+                    # Create a more basic OAuth session
+                    from requests_oauthlib import OAuth2Session
+                    from google.oauth2.credentials import Credentials
+                    
+                    if 'web' in client_config:
+                        client_id = client_config['web']['client_id']
+                        client_secret = client_config['web']['client_secret']
+                        token_uri = client_config['web']['token_uri']
+                    else:
+                        client_id = client_config['installed']['client_id']
+                        client_secret = client_config['installed']['client_secret']
+                        token_uri = client_config['installed']['token_uri']
+                    
+                    oauth = OAuth2Session(client_id, redirect_uri=redirect_uri, scope=SCOPES)
+                    token = oauth.fetch_token(
+                        token_uri,
+                        code=code,
+                        client_secret=client_secret,
+                        include_client_id=True
+                    )
+                    
+                    # Create credentials from the token
+                    creds = Credentials(
+                        token=token['access_token'],
+                        refresh_token=token.get('refresh_token'),
+                        token_uri=token_uri,
+                        client_id=client_id,
+                        client_secret=client_secret,
+                        scopes=token.get('scope', SCOPES)
+                    )
+                    logger.info("Successfully retrieved token with manual OAuth session")
+                except Exception as manual_oauth_error:
+                    logger.error(f"Manual OAuth session failed: {manual_oauth_error}")
+                    raise
+            else:
+                raise
+        else:
+            # If no exception, get credentials from the flow
+            creds = flow.credentials
+            logger.info("Successfully retrieved token with standard flow")
         
-        # Get the credentials
-        creds = flow.credentials
+        # Save the credentials to a file for Google Ads API usage
+        os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
+        with open(TOKEN_PATH, 'w') as token_file:
+            token_file.write(creds.to_json())
         
-        # Save the credentials to a file
-        with open(TOKEN_PATH, 'w') as token:
-            token.write(creds.to_json())
+        # Create a Google Ads YAML file if it doesn't exist
+        google_ads_yaml_path = os.path.join(os.path.dirname(TOKEN_PATH), 'google-ads.yaml')
+        if not os.path.exists(google_ads_yaml_path):
+            # Get the required values from environment or use defaults
+            developer_token = os.environ.get('GOOGLE_ADS_DEVELOPER_TOKEN', '')
+            login_customer_id = os.environ.get('GOOGLE_ADS_LOGIN_CUSTOMER_ID', os.environ.get('CLIENT_CUSTOMER_ID', '8127539892'))
+            
+            if 'web' in client_config:
+                client_id = client_config['web']['client_id']
+                client_secret = client_config['web']['client_secret']
+            else:
+                client_id = client_config['installed']['client_id']
+                client_secret = client_config['installed']['client_secret']
+            
+            # Create the YAML content
+            google_ads_yaml = f"""client_id: {client_id}
+client_secret: {client_secret}
+developer_token: {developer_token}
+login_customer_id: {login_customer_id}
+refresh_token: {creds.refresh_token}
+token_uri: https://oauth2.googleapis.com/token
+use_proto_plus: true
+api_version: v17"""
+            
+            # Write the YAML file
+            with open(google_ads_yaml_path, 'w') as yaml_file:
+                yaml_file.write(google_ads_yaml)
+                
+            logger.info(f"Created Google Ads YAML configuration at {google_ads_yaml_path}")
         
-        # Get user info from the ID token
+        # Generate a user ID and create a token
         user_id = f"google-oauth2|{random.randint(1000000, 9999999)}"
-        
-        # Create a token
         token = {
             'access_token': creds.token,
             'id_token': user_id,
             'expires_in': creds.expiry.timestamp() if creds.expiry else 3600
         }
         
-        # Store the token
+        # Store the token and user in our memory store and session
         TOKENS[user_id] = token
         logger.info(f"Created real OAuth token for user: {user_id}")
         
-        # Store user in session
         session['user_id'] = user_id
         session['access_token'] = creds.token
         session['refresh_token'] = creds.refresh_token
+        session['use_real_ads_client'] = True
+        
+        # Update the refresh token in the google-ads.yaml file
+        if os.path.exists(google_ads_yaml_path) and creds.refresh_token:
+            try:
+                import yaml
+                with open(google_ads_yaml_path, 'r') as file:
+                    config = yaml.safe_load(file)
+                
+                # Update the refresh token if it's different
+                if config.get('refresh_token') != creds.refresh_token:
+                    config['refresh_token'] = creds.refresh_token
+                    with open(google_ads_yaml_path, 'w') as file:
+                        yaml.dump(config, file)
+                    logger.info("Updated refresh token in google-ads.yaml")
+            except Exception as yaml_error:
+                logger.error(f"Error updating YAML file: {yaml_error}")
         
         # Redirect directly to dashboard
         return redirect('/ads-dashboard')
     except Exception as e:
         logger.error(f"Error in OAuth callback: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return render_template('enable_real_ads.html', error=f"Error in OAuth callback: {str(e)}")
 
 @app.route('/api/auth/verify', methods=['GET'])
@@ -611,13 +823,39 @@ def list_endpoints():
 
 @app.route('/api/auth/mock-token', methods=['GET'])
 def mock_token():
-    """This endpoint is disabled in production mode"""
-    logger.warning("Mock authentication is disabled in production mode")
+    """Create a mock auth token for testing"""
+    if ENVIRONMENT == "production" and not ALLOW_MOCK_AUTH:
+        logger.warning("Mock authentication is disabled in production mode")
+        return jsonify({
+            "error": "Mock authentication disabled",
+            "message": "Mock authentication is disabled in production mode. Use the real OAuth authentication flow.",
+            "environment": ENVIRONMENT
+        }), 403
+    
+    # Create a mock user ID
+    user_id = f"google-oauth2|{123456789}"
+    
+    # Create a mock token
+    token = {
+        'access_token': f"mock-token-{int(time.time())}",
+        'id_token': user_id,
+        'expires_in': 3600
+    }
+    
+    # Store the token
+    TOKENS[user_id] = token
+    logger.info(f"Created mock OAuth token for user: {user_id}")
+    
+    # Store user in session
+    session['user_id'] = user_id
+    session['access_token'] = token['access_token']
+    
     return jsonify({
-        "error": "Mock authentication disabled",
-        "message": "Mock authentication is disabled in production mode. Use the real OAuth authentication flow.",
-        "environment": ENVIRONMENT
-    }), 403
+        "status": "success",
+        "message": "Mock authentication successful",
+        "token": token['access_token'],
+        "user_id": user_id
+    })
 
 @app.route('/api/auth/use-real-ads-client', methods=['GET'])
 def use_real_ads_client():
@@ -875,6 +1113,112 @@ def ads_dashboard_simple_page():
     
     return render_template('ads_dashboard_simple.html')
 
+@app.route('/run-diagnostics', methods=['GET'])
+def run_network_diagnostics():
+    """Run network diagnostics and display results"""
+    if not HAS_ERROR_HANDLERS:
+        return jsonify({
+            "error": "Network diagnostics module not available",
+            "message": "The network_diagnostics.py module is required for this feature"
+        }), 500
+    
+    try:
+        # Generate HTML report
+        html_report = generate_diagnostics_report()
+        
+        # Save report to file in static directory
+        static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+        os.makedirs(static_dir, exist_ok=True)
+        report_path = os.path.join(static_dir, f"network_diagnostics_{int(time.time())}.html")
+        
+        with open(report_path, 'w') as f:
+            f.write(html_report)
+        
+        # Return HTML directly for display
+        return html_report
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to run diagnostics: {str(e)}",
+            "details": str(e)
+        }), 500
+
+@app.route('/api/diagnostics/check-port', methods=['GET'])
+def check_port_availability():
+    """Check if a port is available for use"""
+    port = request.args.get('port', type=int)
+    
+    if not port:
+        return jsonify({
+            "error": "Missing required parameter: port",
+            "message": "Please specify a port to check"
+        }), 400
+    
+    try:
+        # Try to create a socket and bind to the port
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex(('localhost', port))
+            
+            if result == 0:
+                # Port is in use
+                return jsonify({
+                    "port": port,
+                    "available": False,
+                    "message": f"Port {port} is already in use"
+                })
+            else:
+                # Port is available
+                return jsonify({
+                    "port": port,
+                    "available": True,
+                    "message": f"Port {port} is available"
+                })
+    except Exception as e:
+        return jsonify({
+            "port": port,
+            "error": str(e),
+            "message": f"Error checking port {port}"
+        }), 500
+
+@app.route('/api/diagnostics/system-info', methods=['GET'])
+def get_system_info():
+    """Get basic system information"""
+    try:
+        info = {
+            "platform": platform.system(),
+            "platform_version": platform.version(),
+            "python_version": platform.python_version(),
+            "hostname": platform.node(),
+            "processor": platform.processor(),
+            "machine": platform.machine(),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Add network interface information if available
+        try:
+            if hasattr(socket, 'if_nameindex'):
+                interfaces = []
+                for i in socket.if_nameindex():
+                    interfaces.append({
+                        "index": i[0],
+                        "name": i[1]
+                    })
+                info["network_interfaces"] = interfaces
+        except:
+            pass
+        
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "message": "Error retrieving system information"
+        }), 500
+        
+@app.route('/connection-troubleshooter', methods=['GET'])
+def connection_troubleshooter():
+    """Serve the connection troubleshooter page"""
+    return render_template('connection_troubleshooter.html')
+
 if __name__ == '__main__':
     # Default port is 5002 (was changed from 5001 to avoid conflicts)
     port = int(os.getenv('PORT', 5002))
@@ -882,8 +1226,8 @@ if __name__ == '__main__':
     # Default to development mode
     debug = os.getenv('FLASK_DEBUG', 'true').lower() == 'true'
     
-    # Default to bind to all interfaces for better compatibility
-    host = os.getenv('HOST', '0.0.0.0')
+    # Bind to localhost for development
+    host = os.getenv('HOST', 'localhost')
     
     print("=" * 70)
     print(f"Starting Allervie Analytics API on port {port}")

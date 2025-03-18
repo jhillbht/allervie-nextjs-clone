@@ -1,4 +1,4 @@
-name: allervie-analytics-dashboard
+name: allervie-unified
 region: nyc
 services:
 - name: api
@@ -26,6 +26,8 @@ services:
     value: "false"
   - key: ENVIRONMENT
     value: "production"
+  - key: USE_REAL_ADS_CLIENT
+    value: "true"
   - key: GOOGLE_ADS_CLIENT_ID
     value: "22083613754-d1omeg2958vrsndpqg2v1jp0ncm7sr23.apps.googleusercontent.com"
   - key: GOOGLE_ADS_CLIENT_SECRET
@@ -51,3 +53,5 @@ services:
     value: "8127539892"
   - key: USE_ENHANCED_REFRESH
     value: "true"
+  - key: APP_URL
+    value: "allervie-unified.ondigitalocean.app"

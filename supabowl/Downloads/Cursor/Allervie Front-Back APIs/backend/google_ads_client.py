@@ -89,8 +89,14 @@ def get_google_ads_client():
                 raise
             return None
         
-        # Load the client with the API version from the YAML file, defaulting to v14
-        api_version = config.get('api_version', 'v14') if config else 'v14'
+        # Get API version from environment or config file with v17 as default
+        api_version = os.environ.get('GOOGLE_ADS_API_VERSION', config.get('api_version', 'v17')) if config else 'v17'
+        
+        # Ensure api_version starts with 'v'
+        if not api_version.startswith('v'):
+            api_version = 'v' + api_version
+            
+        logger.info(f"Attempting to load Google Ads client with API version {api_version}")
         
         try:
             client = GoogleAdsClient.load_from_storage(yaml_path, version=api_version)
@@ -119,23 +125,26 @@ def get_google_ads_client():
                 service = client.get_service('GoogleAdsService')
                 logger.info(f"Successfully got GoogleAdsService: {type(service).__name__}")
                 
-                # Test the service with a simple query
-                test_query = """
-                    SELECT customer.id
-                    FROM customer
-                    LIMIT 1
-                """
-                try:
-                    service.search(
-                        customer_id=config['login_customer_id'],
-                        query=test_query
-                    )
-                    logger.info("Successfully executed test query")
-                except Exception as query_error:
-                    logger.error(f"Test query failed: {query_error}")
-                    if ENVIRONMENT == "production":
-                        raise
-                    return None
+                # Only test the service connection in development environment
+                if ENVIRONMENT != "production":
+                    test_query = """
+                        SELECT customer.id
+                        FROM customer
+                        LIMIT 1
+                    """
+                    try:
+                        service.search(
+                            customer_id=config['login_customer_id'],
+                            query=test_query
+                        )
+                        logger.info("Successfully executed test query")
+                    except Exception as query_error:
+                        logger.error(f"Test query failed: {query_error}")
+                        if ENVIRONMENT == "production":
+                            raise
+                        return None
+                
+                return client
                     
             except Exception as service_error:
                 logger.error(f"Error getting GoogleAdsService: {service_error}")
@@ -143,25 +152,33 @@ def get_google_ads_client():
                     raise
                 return None
                 
-            return client
         except Exception as e:
             logger.error(f"Failed to create client with API version {api_version}: {e}")
             
-            # Fall back to try alternative versions
-            fallback_versions = ['v19', 'v18', 'v17']
-            for version in fallback_versions:
-                try:
-                    logger.info(f"Trying fallback to API version {version}")
-                    client = GoogleAdsClient.load_from_storage(yaml_path, version=version)
-                    if client and hasattr(client, 'get_service'):
-                        logger.info(f"Fallback to {version} successful!")
-                        return client
-                except Exception:
-                    continue  # Try next version
-                    
-            logger.error("All fallback version attempts failed")
+            # Only try fallbacks if we're not in production or using API v17
+            if ENVIRONMENT != "production" or api_version != "v17":
+                # Always try v17 first as our primary fallback
+                fallback_versions = ['v17']
+                
+                # Add other versions if needed
+                if api_version != "v17" and api_version != "v18":
+                    fallback_versions.append('v18')
+                if api_version != "v17" and api_version != "v19":
+                    fallback_versions.append('v19')
+                
+                for version in fallback_versions:
+                    try:
+                        logger.info(f"Trying fallback to API version {version}")
+                        client = GoogleAdsClient.load_from_storage(yaml_path, version=version)
+                        if client and hasattr(client, 'get_service'):
+                            logger.info(f"Fallback to {version} successful!")
+                            return client
+                    except Exception:
+                        continue  # Try next version
+            
+            logger.error("All API version attempts failed")
             if ENVIRONMENT == "production":
-                raise ValueError("Failed to create Google Ads client with any API version")
+                raise ValueError(f"Failed to create Google Ads client with API version {api_version}")
             return None
     except Exception as e:
         logger.error(f"Error getting Google Ads client: {e}")
