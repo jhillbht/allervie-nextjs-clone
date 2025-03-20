@@ -9,6 +9,7 @@ services:
       branch: main
       deploy_on_push: true
     http_port: 8080
+    run_command: node .next/standalone/server.js
     instance_count: 1
     instance_size_slug: basic-xs
     routes:
