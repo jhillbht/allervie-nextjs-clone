@@ -6,7 +6,7 @@ services:
       repo: jhillbht/allervie-nextjs-clone
       branch: main
       deploy_on_push: true
-    build_command: pnpm install --frozen-lockfile && pnpm build
+    build_command: pnpm install --frozen-lockfile && pnpm --force run build
     run_command: node .next/standalone/server.js
     http_port: 8080
     instance_count: 1
