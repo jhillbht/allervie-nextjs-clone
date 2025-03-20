@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone', // Essential for Docker deployments
   poweredByHeader: false, // Remove X-Powered-By header for security
   reactStrictMode: true,
   env: {
