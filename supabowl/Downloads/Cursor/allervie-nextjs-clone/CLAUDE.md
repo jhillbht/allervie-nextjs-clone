@@ -1,5 +1,31 @@
 # Allervie Dashboard Next.js Implementation Guide
 
+## Deployment Status and Troubleshooting Notes
+
+The current deployment is experiencing issues with the DigitalOcean App Platform. The key problems identified:
+
+1. **Package Manager Conflict**: The deployment is detecting `pnpm-lock.yaml` but the project is set up to use npm, causing build failures
+2. **Build Command Mismatch**: The build command `npm ci && npm run build` fails because pnpm is being used instead of npm
+3. **Port Configuration Inconsistency**: Dockerfile is set for port 8080 but DigitalOcean app.yaml uses port 3000
+4. **Node.js Version Mismatch**: Package.json requires Node.js 22.x but Dockerfile uses 18.x
+
+A fix script has been created at `/Users/supabowl/Downloads/Cursor/allervie-nextjs-clone/fix-deployment.sh` to address these issues.
+
+## Detailed Deployment Error
+
+The current deployment fails with this specific error:
+
+```
+project contains pnpm-lock.yaml, using pnpm
+...
+npm error code EUSAGE
+npm error
+npm error The `npm ci` command can only install with an existing package-lock.json or
+npm error npm-shrinkwrap.json with lockfileVersion >= 1.
+```
+
+This indicates a package manager conflict where the build system detects pnpm-lock.yaml and uses pnpm for dependency installation, but then attempts to run `npm ci` which requires package-lock.json.
+
 ## Quick Start Guide (From Blank Terminal)
 
 ### 1. Clone and Setup
@@ -50,6 +76,65 @@ npm run dev
 1. The dashboard will try to fetch data from the Flask backend
 2. OAuth flow is handled through the backend API
 3. Data will be displayed in the dashboard once authenticated
+
+## DigitalOcean Deployment Process
+
+1. **Fix Identified Issues**:
+   ```bash
+   cd /Users/supabowl/Downloads/Cursor/allervie-nextjs-clone
+   chmod +x fix-deployment.sh  # Ensure the script is executable
+   ./fix-deployment.sh
+   ```
+
+2. **Push changes to GitHub**:
+   ```bash
+   git add .
+   git commit -m "Fix: Update package manager configuration for DigitalOcean deployment"
+   git push origin main
+   ```
+
+3. **Deploy to DigitalOcean**:
+   ```bash
+   ./deploy-digitalocean.sh
+   ```
+
+4. **Monitor Deployment**:
+   ```bash
+   # Get the APP_ID from the deployment script output
+   doctl apps logs APP_ID --follow
+   ```
+
+5. **Test Deployed Application**:
+   ```bash
+   # Use the App URL from the deployment output
+   curl https://YOUR_APP_URL/api/health
+   ```
+
+## Alternative Solutions
+
+If the fix-deployment.sh script doesn't solve the issue, there are two alternative approaches:
+
+### Option 1: Update the build command
+
+Change the build command in `.do/app.yaml` to use pnpm instead of npm:
+
+```yaml
+build_command: pnpm install && pnpm build
+```
+
+### Option 2: Switch to Docker deployment
+
+Use the Dockerfile included in the repository for direct container deployment:
+
+```yaml
+services:
+  - name: nextjs-dashboard
+    dockerfile_path: Dockerfile
+    github:
+      repo: jhillbht/allervie-nextjs-clone
+      branch: main
+    # Other configuration...
+```
 
 ## Features Implemented
 
@@ -113,38 +198,52 @@ npm run dev
 - **Missing Data**: Inspect network requests in browser developer tools
 - **Environment Variables**: Make sure `.env.local` is present and correctly formatted
 
-## DigitalOcean Deployment
+## DigitalOcean Deployment Configuration
 
-### Deployment Configuration
-
-1. Create `.do/app.yaml` in the root directory:
+1. Updated `.do/app.yaml` in the root directory:
    ```yaml
-   name: allervie-dashboard
+   name: allervie-analytics-dashboard
+   region: sfo
    services:
-     - name: web
+     - name: nextjs-dashboard
        github:
-         repo: username/allervie-nextjs-clone
+         repo: jhillbht/allervie-nextjs-clone
          branch: main
-       build_command: npm run build
+         deploy_on_push: true
+       build_command: npm ci && npm run build
        run_command: npm start
-       http_port: 3000
-       instance_size: basic-xxs
+       http_port: 8080
        instance_count: 1
+       instance_size_slug: basic-xs
        routes:
          - path: /
-       envs:
-         - key: NEXT_PUBLIC_API_URL
-           value: ${api.INTERNAL_URL}
-           scope: BUILD_TIME
-         - key: NODE_ENV
-           value: production
-           scope: RUN_TIME
+         preserve_path_prefix: false
+       health_check:
+         http_path: /api/health
+         initial_delay_seconds: 20
+         period_seconds: 10
+         timeout_seconds: 5
+         success_threshold: 1
+         failure_threshold: 3
    ```
 
-2. Configure DigitalOcean App Platform:
-   - Connect GitHub repository
-   - Set environment variables
-   - Deploy application
+### doctl Command Reference
+
+Key doctl commands for managing the deployment:
+
+```bash
+# List all apps
+doctl apps list
+
+# Get app details
+doctl apps get APP_ID
+
+# View logs
+doctl apps logs APP_ID
+
+# View deployment status
+doctl apps get-deployment APP_ID DEPLOYMENT_ID
+```
 
 ### Environment Variables for Production
 
