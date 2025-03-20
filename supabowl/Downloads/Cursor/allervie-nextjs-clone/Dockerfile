@@ -33,8 +33,8 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Set proper permissions
-RUN mkdir -p .next
-RUN chown nextjs:nodejs .next
+RUN mkdir -p .next/standalone .next/static
+RUN chown -R nextjs:nodejs .next
 
 # Copy necessary files
 COPY --from=builder /app/public ./public
@@ -49,7 +49,7 @@ EXPOSE 8080
 ENV PORT 8080
 ENV HOSTNAME "0.0.0.0"
 
-# Add healthcheck
+# Add healthcheck using wget instead of curl
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/health || exit 1
 
 CMD ["node", "server.js"]
