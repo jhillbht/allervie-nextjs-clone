@@ -1,13 +1,13 @@
 name: allervie-analytics-dashboard
 region: sfo
 services:
-  - name: web
-    source_dir: /
-    dockerfile_path: Dockerfile
+  - name: nextjs-dashboard
     github:
       repo: jhillbht/allervie-nextjs-clone
       branch: main
       deploy_on_push: true
+    build_command: npm ci && npm run build
+    run_command: npm start
     http_port: 8080
     instance_count: 1
     instance_size_slug: basic-xs
@@ -40,6 +40,22 @@ services:
         type: SECRET
         value: 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
       
+      # Google Ads API credentials
+      - key: GOOGLE_ADS_DEVELOPER_TOKEN
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: kqcdDd6o0AAACpgKAZIRHw # Replace with actual token
+      - key: GOOGLE_ADS_LOGIN_CUSTOMER_ID
+        scope: RUN_AND_BUILD_TIME
+        value: "8127539892" # Replace with actual ID
+      - key: GOOGLE_ADS_CUSTOMER_ID 
+        scope: RUN_AND_BUILD_TIME
+        value: "8127539892" # Replace with actual ID
+      - key: GOOGLE_ADS_REFRESH_TOKEN
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "1//06rKB7BnQZXNwCgYIARAAGAYSNwF-L9IrLOnYbRX-mNOWeFxpGdNnV46RfDIUvO7F0xHy5c_gLKAHNH6xOm0UuGXsYRPajjRDGBE" # Replace with actual token
+      
       # Application configuration
       - key: NODE_ENV
         scope: RUN_AND_BUILD_TIME
@@ -52,8 +68,3 @@ services:
       - key: NEXT_TELEMETRY_DISABLED
         scope: RUN_AND_BUILD_TIME
         value: "1"
-      
-      # Port configuration
-      - key: PORT
-        scope: RUN_TIME
-        value: "8080"
