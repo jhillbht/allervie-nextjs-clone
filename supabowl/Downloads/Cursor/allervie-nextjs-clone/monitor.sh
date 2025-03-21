@@ -22,68 +22,66 @@ fi
 
 echo -e "${YELLOW}Found app with ID: $APP_ID${NC}"
 
-# Get deployment details
-echo -e "${YELLOW}Getting deployment details...${NC}"
-APP_DETAILS=$(doctl apps get $APP_ID --format "Spec.Name,DefaultIngress,ActiveDeployment.ID,ActiveDeployment.Phase,ActiveDeployment.Progress.SuccessSteps,ActiveDeployment.Progress.TotalSteps,ActiveDeployment.Progress.ErrorSteps")
+# Get app info
+echo -e "${YELLOW}Getting app details...${NC}"
+APP_INFO=$(doctl apps get $APP_ID --format "Spec.Name,DefaultIngress")
+APP_NAME=$(echo "$APP_INFO" | awk '{print $1}')
+APP_URL=$(echo "$APP_INFO" | awk '{print $2}')
 
-APP_NAME=$(echo "$APP_DETAILS" | awk '{print $1}')
-APP_URL=$(echo "$APP_DETAILS" | awk '{print $2}')
-DEPLOYMENT_ID=$(echo "$APP_DETAILS" | awk '{print $3}')
-DEPLOYMENT_PHASE=$(echo "$APP_DETAILS" | awk '{print $4}')
-SUCCESS_STEPS=$(echo "$APP_DETAILS" | awk '{print $5}')
-TOTAL_STEPS=$(echo "$APP_DETAILS" | awk '{print $6}')
-ERROR_STEPS=$(echo "$APP_DETAILS" | awk '{print $7}')
-
-# Calculate progress percentage
-if [ -n "$TOTAL_STEPS" ] && [ "$TOTAL_STEPS" -gt 0 ]; then
-    PROGRESS_PCT=$((SUCCESS_STEPS * 100 / TOTAL_STEPS))
-else
-    PROGRESS_PCT=0
-fi
-
-# Display deployment details
 echo -e "${GREEN}App Name: $APP_NAME${NC}"
 echo -e "${GREEN}App URL: $APP_URL${NC}"
-echo -e "${GREEN}Deployment ID: $DEPLOYMENT_ID${NC}"
 
-# Display deployment phase with color
-case "$DEPLOYMENT_PHASE" in
-    "PENDING" | "BUILDING" | "DEPLOYING")
-        echo -e "${YELLOW}Deployment Phase: $DEPLOYMENT_PHASE${NC}"
-        ;;
-    "ACTIVE" | "DEPLOYED")
-        echo -e "${GREEN}Deployment Phase: $DEPLOYMENT_PHASE${NC}"
-        ;;
-    "ERROR" | "FAILED")
-        echo -e "${RED}Deployment Phase: $DEPLOYMENT_PHASE${NC}"
-        ;;
-    *)
-        echo -e "Deployment Phase: $DEPLOYMENT_PHASE"
-        ;;
-esac
+# Get latest deployment
+echo -e "${YELLOW}Getting deployment details...${NC}"
+DEPLOYMENT_ID=$(doctl apps list-deployments $APP_ID --format ID --no-header | head -n 1)
 
-echo -e "Progress: $PROGRESS_PCT% ($SUCCESS_STEPS/$TOTAL_STEPS steps complete)"
-
-if [ -n "$ERROR_STEPS" ] && [ "$ERROR_STEPS" -gt 0 ]; then
-    echo -e "${RED}Error Steps: $ERROR_STEPS${NC}"
+if [ -n "$DEPLOYMENT_ID" ]; then
+    echo -e "${GREEN}Latest Deployment ID: $DEPLOYMENT_ID${NC}"
+    
+    # Get deployment details
+    DEPLOYMENT_INFO=$(doctl apps get-deployment $APP_ID $DEPLOYMENT_ID --format "Phase,Progress")
+    DEPLOYMENT_PHASE=$(echo "$DEPLOYMENT_INFO" | awk '{print $1}')
+    DEPLOYMENT_PROGRESS=$(echo "$DEPLOYMENT_INFO" | awk '{print $2}')
+    
+    # Display deployment status with color
+    case "$DEPLOYMENT_PHASE" in
+        "PENDING" | "BUILDING" | "DEPLOYING")
+            echo -e "${YELLOW}Deployment Status: $DEPLOYMENT_PHASE ${DEPLOYMENT_PROGRESS}${NC}"
+            ;;
+        "ACTIVE" | "DEPLOYED")
+            echo -e "${GREEN}Deployment Status: $DEPLOYMENT_PHASE${NC}"
+            ;;
+        "ERROR" | "FAILED")
+            echo -e "${RED}Deployment Status: $DEPLOYMENT_PHASE${NC}"
+            ;;
+        *)
+            echo -e "Deployment Status: $DEPLOYMENT_PHASE"
+            ;;
+    esac
+else
+    echo -e "${RED}No deployments found.${NC}"
 fi
 
 # Show recent logs
 echo -e "\n${YELLOW}Recent Logs:${NC}"
-doctl apps logs $APP_ID --tail 25
+doctl apps logs $APP_ID --tail 20
 
 # Provide command to follow logs
 echo -e "\n${YELLOW}To follow logs in real-time, run:${NC}"
 echo -e "doctl apps logs $APP_ID --follow"
 
-# If deployment is active, check health endpoint
-if [ "$DEPLOYMENT_PHASE" == "ACTIVE" ] && [ -n "$APP_URL" ]; then
+# If app URL is available and deployment is active, check health endpoint
+if [ -n "$APP_URL" ] && [ "$DEPLOYMENT_PHASE" == "ACTIVE" ]; then
     echo -e "\n${YELLOW}Checking health endpoint...${NC}"
-    HEALTH_CHECK=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health")
+    HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health")
     
-    if [ "$HEALTH_CHECK" == "200" ]; then
+    if [ "$HEALTH_CODE" == "200" ]; then
         echo -e "${GREEN}Health check passed: 200 OK${NC}"
+        
+        # Get health details
+        HEALTH_DETAILS=$(curl -s "$APP_URL/api/health")
+        echo -e "Health Details: $HEALTH_DETAILS"
     else
-        echo -e "${RED}Health check failed: $HEALTH_CHECK${NC}"
+        echo -e "${RED}Health check failed: $HEALTH_CODE${NC}"
     fi
 fi

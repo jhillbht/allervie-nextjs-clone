@@ -44,33 +44,17 @@ else
 fi
 
 echo -e "${GREEN}Deployment initiated!${NC}"
+echo -e "${YELLOW}App ID: $APP_ID${NC}"
 
-# Wait a moment for the deployment to start
-sleep 5
+# Get deployment ID
+echo -e "${YELLOW}Getting latest deployment ID...${NC}"
+DEPLOYMENT_ID=$(doctl apps list-deployments $APP_ID --format ID --no-header | head -n 1)
 
-# Get app URL
-if [ -z "$APP_ID" ]; then
-    APP_ID=$(doctl apps list --format "ID,Spec.Name" --no-header | grep "allervie-analytics-dashboard" | awk '{print $1}')
-fi
-
-if [ -n "$APP_ID" ]; then
-    echo -e "${YELLOW}App ID: $APP_ID${NC}"
-    
-    # Get app details
-    APP_DETAILS=$(doctl apps get $APP_ID --format "DefaultIngress,ActiveDeployment.ID,ActiveDeployment.Phase")
-    APP_URL=$(echo "$APP_DETAILS" | awk '{print $1}')
-    DEPLOYMENT_ID=$(echo "$APP_DETAILS" | awk '{print $2}')
-    DEPLOYMENT_PHASE=$(echo "$APP_DETAILS" | awk '{print $3}')
-    
-    echo -e "${YELLOW}App URL: $APP_URL${NC}"
+if [ -n "$DEPLOYMENT_ID" ]; then
     echo -e "${YELLOW}Deployment ID: $DEPLOYMENT_ID${NC}"
-    echo -e "${YELLOW}Deployment Phase: $DEPLOYMENT_PHASE${NC}"
-    
-    # Show the deployment logs command
     echo -e "${YELLOW}To view deployment logs, run:${NC}"
     echo -e "doctl apps logs $APP_ID"
-    
-    echo -e "${GREEN}Deployment initiated. Monitor the status with the command above.${NC}"
+    echo -e "${GREEN}Deployment initiated. Use the monitor.sh script to check status.${NC}"
 else
-    echo -e "${RED}Failed to get app ID after deployment. Please check manually with 'doctl apps list'.${NC}"
+    echo -e "${RED}Failed to get deployment ID. Please check manually with 'doctl apps list-deployments $APP_ID'.${NC}"
 fi
