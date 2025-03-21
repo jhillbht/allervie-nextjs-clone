@@ -1,6 +1,5 @@
 name: allervie-analytics-dashboard
-regions:
-- sfo
+region: sfo
 services:
 - dockerfile_path: Dockerfile
   github:
