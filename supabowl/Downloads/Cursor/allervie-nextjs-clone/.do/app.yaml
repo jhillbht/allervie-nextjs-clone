@@ -1,71 +1,27 @@
 name: allervie-analytics-dashboard
-region: sfo
 services:
-  - name: nextjs-dashboard
-    source_dir: /
+  - name: web
     github:
       repo: jhillbht/allervie-nextjs-clone
       branch: main
       deploy_on_push: true
     build_command: npm install && npm run build
-    run_command: node .next/standalone/server.js
+    run_command: npm start
     http_port: 8080
     instance_count: 1
     instance_size_slug: basic-xs
     routes:
       - path: /
-        preserve_path_prefix: false
     health_check:
       http_path: /api/health
-      initial_delay_seconds: 20
-      period_seconds: 10
-      timeout_seconds: 5
-      success_threshold: 1
-      failure_threshold: 3
+      initial_delay_seconds: 10
     envs:
-      # Authentication variables
-      - key: NEXTAUTH_URL
-        scope: RUN_AND_BUILD_TIME
-        value: ${APP_URL}
-      - key: NEXTAUTH_SECRET
-        scope: RUN_AND_BUILD_TIME
-        type: SECRET
-        value: allervie-dashboard-next-secret-key-2025
-      
-      # Google API credentials
-      - key: GOOGLE_CLIENT_ID
-        scope: RUN_AND_BUILD_TIME
-        value: 22083613754-d1omeg2958vrsndpqg2v1jp0ncm7sr23.apps.googleusercontent.com
-      - key: GOOGLE_CLIENT_SECRET
-        scope: RUN_AND_BUILD_TIME
-        type: SECRET
-        value: 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
-      
-      # Google Ads API credentials
-      - key: GOOGLE_ADS_DEVELOPER_TOKEN
-        scope: RUN_AND_BUILD_TIME
-        type: SECRET
-        value: kqcdDd6o0AAACpgKAZIRHw # Replace with actual token
-      - key: GOOGLE_ADS_LOGIN_CUSTOMER_ID
-        scope: RUN_AND_BUILD_TIME
-        value: "8127539892" # Replace with actual ID
-      - key: GOOGLE_ADS_CUSTOMER_ID 
-        scope: RUN_AND_BUILD_TIME
-        value: "8127539892" # Replace with actual ID
-      - key: GOOGLE_ADS_REFRESH_TOKEN
-        scope: RUN_AND_BUILD_TIME
-        type: SECRET
-        value: "1//06rKB7BnQZXNwCgYIARAAGAYSNwF-L9IrLOnYbRX-mNOWeFxpGdNnV46RfDIUvO7F0xHy5c_gLKAHNH6xOm0UuGXsYRPajjRDGBE" # Replace with actual token
-      
-      # Application configuration
+      - key: PORT
+        scope: RUN_TIME
+        value: "8080"
       - key: NODE_ENV
-        scope: RUN_AND_BUILD_TIME
+        scope: RUN_TIME
         value: production
       - key: NEXT_PUBLIC_API_URL
         scope: RUN_AND_BUILD_TIME
         value: ${APP_URL}/api
-      
-      # Performance and monitoring
-      - key: NEXT_TELEMETRY_DISABLED
-        scope: RUN_AND_BUILD_TIME
-        value: "1"
