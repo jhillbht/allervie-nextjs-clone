@@ -35,7 +35,7 @@ export default function MetricCard({
   }
   
   // Determine if the change is positive, negative, or neutral
-  let changeType = 'neutral';
+  let changeType: 'positive' | 'negative' | 'neutral' = 'neutral';
   if (typeof change === 'number') {
     changeType = change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral';
     // If inverseColors is true, reverse the positive/negative logic (e.g., for metrics like bounce rate)

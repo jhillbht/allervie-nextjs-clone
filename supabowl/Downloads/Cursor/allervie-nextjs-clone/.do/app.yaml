@@ -1,8 +1,30 @@
 name: allervie-analytics-dashboard
+regions:
+- sfo
 services:
-- environment_slug: node-js
+- dockerfile_path: Dockerfile
   github:
-    repo: jhillbht/allervie-nextjs-clone
     branch: main
     deploy_on_push: true
-  name: nextjs-dashboard
+    repo: jhillbht/allervie-nextjs-clone
+  http_port: 8080
+  instance_count: 1
+  instance_size_slug: basic-xs
+  name: allervie-nextjs
+  routes:
+  - path: /
+  source_dir: /
+  health_check:
+    http_path: /api/health
+    initial_delay_seconds: 10
+    period_seconds: 5
+    timeout_seconds: 2
+    success_threshold: 1
+    failure_threshold: 3
+  envs:
+  - key: NODE_ENV
+    scope: RUN_AND_BUILD_TIME
+    value: production
+  - key: NEXT_TELEMETRY_DISABLED
+    scope: RUN_AND_BUILD_TIME
+    value: "1"

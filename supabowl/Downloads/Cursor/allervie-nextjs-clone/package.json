@@ -1,17 +1,30 @@
 {
-  "name": "allervie-dashboard",
+  "name": "allervie-analytics-dashboard",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "serve -s _static -l tcp://0.0.0.0:${PORT:-8080} -n",
+    "start": "node server.js",
     "lint": "next lint"
   },
   "dependencies": {
     "next": "14.0.4",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "serve": "^14.2.1"
+    "axios": "^1.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.4",
+    "@types/react": "^18.2.42",
+    "@types/react-dom": "^18.2.17",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.3.6",
+    "typescript": "^5.3.3"
+  },
+  "packageManager": "pnpm@9.4.0",
+  "engines": {
+    "node": ">=18.18.0"
   }
 }

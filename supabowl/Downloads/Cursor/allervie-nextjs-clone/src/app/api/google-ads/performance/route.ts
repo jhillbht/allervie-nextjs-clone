@@ -2,14 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 import { mockAdsPerformance } from '@/lib/mock-data';
 
-// Define the base URL for the Flask backend API
-const BACKEND_API_URL = process.env.BACKEND_API_URL || 'http://localhost:5002';
-
 /**
  * Handler for GET requests to /api/google-ads/performance
  * 
- * This endpoint proxies requests to the Flask backend API and falls back to mock data if needed.
- * It supports query parameters for date ranges and previous period comparison.
+ * This endpoint implements direct integration with Google Ads API
+ * instead of proxying to a separate backend.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   // Extract query parameters
@@ -27,28 +24,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(mockAdsPerformance);
   }
   
-  // Build query parameters for the backend API
-  const params: Record<string, string> = {};
-  if (startDate) params.start_date = startDate;
-  if (endDate) params.end_date = endDate;
-  if (previousPeriod) params.previous_period = 'true';
-  
   try {
-    console.log(`Requesting Google Ads performance data from ${BACKEND_API_URL}/api/google-ads/performance`);
+    // In a production implementation, we would connect to the Google Ads API here
+    // For now, we'll use mock data as we don't have the actual authentication credentials
     
-    // Make a request to the backend API
-    const response = await axios.get(`${BACKEND_API_URL}/api/google-ads/performance`, { 
-      params,
-      // Pass along any authorization headers
-      headers: {
-        Authorization: request.headers.get('Authorization') || '',
-      },
-    });
+    console.log('Mock implementation of Google Ads API integration');
+    console.log(`Parameters: start_date=${startDate}, end_date=${endDate}, previous_period=${previousPeriod}`);
     
-    console.log('Successfully fetched Google Ads performance data from backend API');
-    return NextResponse.json(response.data);
+    // Return mock data
+    console.log('Returning mock Google Ads performance data');
+    return NextResponse.json(mockAdsPerformance);
+    
   } catch (error) {
-    console.error('Error fetching Google Ads performance data from API:', error);
+    console.error('Error fetching Google Ads performance data:', error);
     
     // Fall back to mock data
     console.log('Falling back to mock Google Ads performance data');

@@ -1,119 +1,71 @@
 # Allervie Analytics Dashboard
 
-A Next.js dashboard for Allervie Health's marketing analytics, featuring Google Ads API integration.
+A simple Next.js application for the Allervie Analytics Dashboard, optimized for deployment on DigitalOcean App Platform.
 
-## Context Priming
-Read README.md, CLAUDE.md, ai_docs/*, and run git ls-files to understand codebase.
-
-Keep troubleshooting the deployment and make memory checkpoints.
-
-Feel free to update the CLAUDE.md, and README, and look for areas to share context via doctl.
-
-Create a detailed Technical Summary of current Project Knowledge as a markdown file.
-
-Create a graphical representation of the current project "Rebuild with Next.js" as an artifact.
-
-## Features
-
-- Real-time Google Ads performance metrics visualization
-- Campaign performance tracking and analysis
-- Responsive design for all device sizes
-- OAuth authentication with Google
-- API routes for backend functionality
-
-## Technology Stack
-
-- Next.js 15.2+
-- TypeScript
-- Tailwind CSS
-- Chart.js for data visualization
-- Deployed on DigitalOcean App Platform
-
-## Getting Started
+## Deployment Instructions
 
 ### Prerequisites
 
-- Node.js 22.x
-- npm or pnpm
-- Google Ads API access
+- Install [doctl](https://docs.digitalocean.com/reference/doctl/how-to/install/)
+- Authenticate with DigitalOcean: `doctl auth init`
 
-### Installation
+### Deploy with Script
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/your-username/allervie-nextjs-clone.git
-   cd allervie-nextjs-clone
-   ```
+Run the deployment script:
 
-2. Install dependencies:
-   ```bash
-   npm install
-   # or
-   pnpm install
-   ```
+```bash
+./deploy.sh
+```
 
-3. Create a `.env.local` file with the following variables:
-   ```
-   # Authentication
-   NEXTAUTH_URL=http://localhost:3000
-   NEXTAUTH_SECRET=your_nextauth_secret
-   
-   # Google API
-   GOOGLE_CLIENT_ID=your_google_client_id
-   GOOGLE_CLIENT_SECRET=your_google_client_secret
-   
-   # API URL
-   NEXT_PUBLIC_API_URL=http://localhost:3000
-   ```
+This will:
+1. Check if doctl is installed and authenticated
+2. Check if the app already exists
+3. Create or update the app using the configuration in `.do/app.yaml`
 
-4. Start the development server:
-   ```bash
-   npm run dev
-   # or
-   pnpm dev
-   ```
+### Manual Deployment
 
-5. Open [http://localhost:3000](http://localhost:3000) in your browser.
+1. Create or update the app:
 
-## Deployment
+```bash
+# For a new app
+doctl apps create --spec .do/app.yaml
 
-### Deploy to DigitalOcean App Platform
+# For an existing app
+doctl apps update APP_ID --spec .do/app.yaml
+```
 
-1. Install the doctl CLI:
-   ```bash
-   # On macOS
-   brew install doctl
-   
-   # On Linux
-   snap install doctl
-   ```
+2. Monitor the deployment:
 
-2. Authenticate with DigitalOcean:
-   ```bash
-   doctl auth init
-   ```
+```bash
+doctl apps list-deployments APP_ID
+```
 
-3. Run the deployment script:
-   ```bash
-   ./deploy-digitalocean.sh
-   ```
+3. View logs:
 
-4. Monitor the deployment:
-   ```bash
-   node scripts/monitor-deployment.js APP_ID
-   ```
+```bash
+doctl apps logs APP_ID
+```
 
-### Environment Variables for Production
+## Development
 
-Make sure to set the following environment variables in your DigitalOcean App Platform settings:
+To run the app locally:
 
-- `NEXTAUTH_URL` - The URL of your deployed application
-- `NEXTAUTH_SECRET` - A secret for NextAuth.js
-- `GOOGLE_CLIENT_ID` - Your Google OAuth client ID
-- `GOOGLE_CLIENT_SECRET` - Your Google OAuth client secret
-- `NEXT_PUBLIC_API_URL` - The API URL (same as your application URL)
-- `NODE_ENV` - Set to `production`
+```bash
+# Install dependencies
+pnpm install
 
-## License
+# Run development server
+pnpm dev
+```
 
-[MIT](LICENSE)
+## Building
+
+```bash
+pnpm build
+```
+
+## Running in Production
+
+```bash
+pnpm start
+```

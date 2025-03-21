@@ -1,36 +1,34 @@
-# Version control
-.git
-.github
-.gitignore
-
-# Dependency directories
+# Dependencies
 node_modules
 .pnp
 .pnp.js
 
 # Testing
 coverage
-.nyc_output
 
-# Next.js build output
-.next
-out
-
-# Environment variables
-.env*
-!.env.example
-
-# Debug logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Next.js
+.next/
+out/
+build
 
 # Misc
 .DS_Store
 *.pem
-README.md
-CHANGELOG.md
-.vscode
-.idea
-*.md
-*.log
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Deployment
+deploy.sh
+
+# Git
+.git/
+.github/

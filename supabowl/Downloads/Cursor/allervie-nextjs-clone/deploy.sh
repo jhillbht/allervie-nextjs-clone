@@ -1,70 +1,50 @@
 #!/bin/bash
+# Simple deployment script for Allervie Analytics Dashboard
 
-# Exit on error
-set -e
+set -e # Exit on any error
 
-echo "=== Allervie Dashboard Deployment Script ==="
-echo "This script will deploy the Allervie Dashboard to DigitalOcean App Platform."
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}=========================================================${NC}"
+echo -e "${BLUE}   Allervie Analytics Dashboard Deployment Script        ${NC}"
+echo -e "${BLUE}=========================================================${NC}"
 
 # Check if doctl is installed
 if ! command -v doctl &> /dev/null; then
-    echo "Error: doctl is not installed. Please install it first:"
-    echo "For macOS: brew install doctl"
-    echo "For more installation options, visit: https://github.com/digitalocean/doctl#installing-doctl"
+    echo -e "${RED}doctl is not installed. Please install it first.${NC}"
+    echo "Visit https://docs.digitalocean.com/reference/doctl/how-to/install/"
     exit 1
 fi
 
-# Check if user is authenticated with DigitalOcean
+# Check if authenticated
 if ! doctl account get &> /dev/null; then
-    echo "You need to authenticate with DigitalOcean first."
-    echo "Please run: doctl auth init"
-    echo "Then try again."
+    echo -e "${RED}Not authenticated with DigitalOcean. Please run 'doctl auth init' first.${NC}"
     exit 1
 fi
 
-echo "=== Building the Next.js application ==="
-npm run build
+echo -e "${GREEN}Authenticated with DigitalOcean!${NC}"
 
-echo "=== Creating/Updating App on DigitalOcean ==="
-# Check if APP_ID environment variable exists
-if [ -z "$DO_APP_ID" ]; then
-    echo "Creating new app on DigitalOcean App Platform..."
-    APP_INFO=$(doctl apps create --spec .do/app.yaml --format ID --no-header)
-    APP_ID=$(echo $APP_INFO | awk '{print $1}')
-    echo "Created new app with ID: $APP_ID"
-    echo "You may want to save this ID as DO_APP_ID in your environment variables."
+# Check for existing app
+APP_NAME="allervie-analytics-dashboard"
+echo -e "${YELLOW}Checking if app already exists...${NC}"
+APP_ID=$(doctl apps list --format "ID,Spec.Name" --no-header | grep "$APP_NAME" | awk '{print $1}')
+
+# Deploy to DigitalOcean
+echo -e "${YELLOW}Deploying to DigitalOcean App Platform...${NC}"
+
+if [ -z "$APP_ID" ]; then
+    echo -e "${YELLOW}Creating new app...${NC}"
+    doctl apps create --spec .do/app.yaml
 else
-    echo "Updating existing app with ID: $DO_APP_ID"
-    doctl apps update $DO_APP_ID --spec .do/app.yaml
-    APP_ID=$DO_APP_ID
+    echo -e "${YELLOW}Updating existing app (ID: $APP_ID)...${NC}"
+    doctl apps update $APP_ID --spec .do/app.yaml
 fi
 
-echo "=== Triggering Deployment ==="
-DEPLOYMENT_ID=$(doctl apps create-deployment $APP_ID --format ID --no-header)
-echo "Deployment initiated with ID: $DEPLOYMENT_ID"
-
-echo "=== Waiting for Deployment to Complete ==="
-echo "This may take several minutes..."
-
-while true; do
-    DEPLOYMENT_STATUS=$(doctl apps get-deployment $APP_ID $DEPLOYMENT_ID --format Phase --no-header)
-    echo -n "."
-    
-    if [ "$DEPLOYMENT_STATUS" == "ACTIVE" ]; then
-        echo -e "\nDeployment completed successfully!"
-        break
-    elif [ "$DEPLOYMENT_STATUS" == "ERROR" ] || [ "$DEPLOYMENT_STATUS" == "FAILED" ]; then
-        echo -e "\nDeployment failed. Check logs for details:"
-        echo "doctl apps logs $APP_ID --deployment $DEPLOYMENT_ID"
-        exit 1
-    fi
-    
-    sleep 10
-done
-
-# Get the app URL
-APP_URL=$(doctl apps get $APP_ID --format DefaultIngress --no-header)
-echo "=== Deployment Complete ==="
-echo "Your application is now available at: $APP_URL"
-echo "To view logs: doctl apps logs $APP_ID"
-echo "To view active deployment: doctl apps get-deployment $APP_ID $DEPLOYMENT_ID"
+echo -e "${GREEN}Deployment initiated!${NC}"
+echo -e "${YELLOW}To monitor the deployment, use:${NC}"
+echo -e "doctl apps list-deployments $APP_ID"
