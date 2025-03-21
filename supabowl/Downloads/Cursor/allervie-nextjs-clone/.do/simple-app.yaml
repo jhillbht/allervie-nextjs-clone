@@ -1,0 +1,19 @@
+name: allervie-nextjs-simple
+services:
+- environment_slug: node-js
+  github:
+    branch: fix-deploy-issue
+    deploy_on_push: true
+    repo: jhillbht/allervie-nextjs-clone
+  name: allervie-nextjs
+  envs:
+  - key: NODE_ENV
+    scope: RUN_AND_BUILD_TIME
+    value: production
+  - key: NEXT_PUBLIC_USE_MOCK_DATA
+    scope: RUN_AND_BUILD_TIME
+    value: "true"
+  - key: NEXTAUTH_SECRET
+    scope: RUN_AND_BUILD_TIME
+    type: SECRET
+    value: your-nextauth-secret-value-here
