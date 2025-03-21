@@ -4,13 +4,23 @@ FROM node:18-alpine AS base
 FROM base AS deps
 WORKDIR /app
 
-# Check if pnpm-lock.yaml exists, otherwise use npm
-COPY package.json package-lock.json* pnpm-lock.yaml* ./
+# Copy package files
+COPY package.json ./
+COPY package-lock.json* ./
+COPY pnpm-lock.yaml* ./
+
+# Install dependencies based on the preferred package manager
 RUN if [ -f pnpm-lock.yaml ]; then \
-      npm install -g pnpm && \
-      pnpm install --frozen-lockfile; \
+        corepack enable; \
+        corepack prepare pnpm@latest --activate; \
+        PNPM_HOME="/root/.local/share/pnpm" && \
+        PATH="$PNPM_HOME:$PATH" && \
+        pnpm fetch; \
+        pnpm install -r --offline --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then \
+        npm ci; \
     else \
-      npm ci; \
+        npm install; \
     fi
 
 # Rebuild the source code only when needed
@@ -19,11 +29,13 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Environment variables for build
+# Next.js collects completely anonymous telemetry data about general usage.
+# Learn more here: https://nextjs.org/telemetry
+# Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
-ENV NODE_ENV production
 
 # Build the application
+ENV NODE_ENV production
 RUN npm run build
 
 # Production image, copy all the files and run next
@@ -36,19 +48,23 @@ ENV NEXT_TELEMETRY_DISABLED 1
 # Create a non-root user
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
-USER nextjs
 
-# Copy necessary files from the builder stage
+# Set the correct permissions
+COPY --from=builder /app/public ./public
+RUN mkdir .next
+RUN chown nextjs:nodejs .next
+
+# Automatically leverage output traces to reduce image size
+# https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Set environment variables for runtime
+USER nextjs
+
+EXPOSE 8080
+
 ENV PORT 8080
 ENV HOSTNAME "0.0.0.0"
 
-# Expose port
-EXPOSE 8080
-
-# Start the application
+# Start the Next.js application
 CMD ["node", "server.js"]

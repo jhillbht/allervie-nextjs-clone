@@ -3,7 +3,7 @@ region: sfo
 services:
 - dockerfile_path: Dockerfile
   github:
-    branch: main
+    branch: fix-deploy-issue
     deploy_on_push: true
     repo: jhillbht/allervie-nextjs-clone
   http_port: 8080
