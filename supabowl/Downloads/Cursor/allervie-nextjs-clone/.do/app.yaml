@@ -27,3 +27,13 @@ services:
   - key: NEXT_TELEMETRY_DISABLED
     scope: RUN_AND_BUILD_TIME
     value: "1"
+  - key: NEXT_PUBLIC_API_URL
+    scope: RUN_AND_BUILD_TIME
+    value: ${APP_URL}
+  - key: NEXTAUTH_URL
+    scope: RUN_AND_BUILD_TIME
+    value: ${APP_URL}
+  - key: NEXTAUTH_SECRET
+    scope: RUN_AND_BUILD_TIME
+    type: SECRET
+    value: "allervie-dashboard-secret-key-replace-in-production"
