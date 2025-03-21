@@ -3,7 +3,7 @@ region: sfo
 services:
 - dockerfile_path: Dockerfile
   github:
-    branch: fix-deploy-issue
+    branch: main
     deploy_on_push: true
     repo: jhillbht/allervie-nextjs-clone
   http_port: 8080
@@ -15,9 +15,9 @@ services:
   source_dir: /
   health_check:
     http_path: /api/health
-    initial_delay_seconds: 10
-    period_seconds: 5
-    timeout_seconds: 2
+    initial_delay_seconds: 20
+    period_seconds: 10
+    timeout_seconds: 5
     success_threshold: 1
     failure_threshold: 3
   envs:
@@ -30,10 +30,13 @@ services:
   - key: NEXT_PUBLIC_API_URL
     scope: RUN_AND_BUILD_TIME
     value: ${APP_URL}
+  - key: NEXT_PUBLIC_USE_MOCK_DATA
+    scope: RUN_AND_BUILD_TIME
+    value: "true"
   - key: NEXTAUTH_URL
     scope: RUN_AND_BUILD_TIME
     value: ${APP_URL}
   - key: NEXTAUTH_SECRET
     scope: RUN_AND_BUILD_TIME
     type: SECRET
-    value: "allervie-dashboard-secret-key-replace-in-production"
+    value: your-nextauth-secret-value-here
