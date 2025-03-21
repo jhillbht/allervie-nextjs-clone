@@ -2,11 +2,13 @@ name: allervie-analytics-dashboard
 region: sfo
 services:
   - name: nextjs-dashboard
-    dockerfile_path: Dockerfile
+    source_dir: /
     github:
       repo: jhillbht/allervie-nextjs-clone
       branch: main
       deploy_on_push: true
+    build_command: npm install && npm run build
+    run_command: node .next/standalone/server.js
     http_port: 8080
     instance_count: 1
     instance_size_slug: basic-xs
